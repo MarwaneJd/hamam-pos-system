@@ -259,32 +259,32 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Tickets aujourd'hui -->
+                <!-- Numéro du prochain ticket -->
                 <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-                    <TextBlock Text="TICKETS AUJOURD'HUI"
-                               FontSize="12"
-                               Foreground="{StaticResource TextSecondary}"
-                               HorizontalAlignment="Center"/>
-                    <TextBlock Text="{Binding TodayTicketsCount}"
-                               FontSize="48" FontWeight="Bold"
-                               Foreground="#3B82F6"
-                               HorizontalAlignment="Center"/>
-                </StackPanel>
-
-                <!-- Revenus aujourd'hui -->
-                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                    <TextBlock Text="REVENUS AUJOURD'HUI"
+                    <TextBlock Text="TICKET SUIVANT"
                                FontSize="12"
                                Foreground="{StaticResource TextSecondary}"
                                HorizontalAlignment="Center"/>
                     <TextBlock HorizontalAlignment="Center">
-                        <Run Text="{Binding TodayRevenue, StringFormat={}{0:N0}}"
-                             FontSize="48" FontWeight="Bold"
-                             Foreground="#22C55E"/>
-                        <Run Text=" DH"
+                        <Run Text="#"
                              FontSize="24"
                              Foreground="{StaticResource TextSecondary}"/>
+                        <Run Text="{Binding NextTicketNumber}"
+                             FontSize="48" FontWeight="Bold"
+                             Foreground="#3B82F6"/>
                     </TextBlock>
+                </StackPanel>
+
+                <!-- Date d'aujourd'hui -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                    <TextBlock Text="DATE"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TodayDate}"
+                               FontSize="36" FontWeight="Bold"
+                               Foreground="#22C55E"
+                               HorizontalAlignment="Center"/>
                 </StackPanel>
 
                 <!-- Heure -->

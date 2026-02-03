@@ -29,6 +29,12 @@ public partial class SalesViewModel : ObservableObject
     private decimal _todayRevenue;
 
     [ObservableProperty]
+    private int _nextTicketNumber;
+
+    [ObservableProperty]
+    private string _todayDate = string.Empty;
+
+    [ObservableProperty]
     private int _pendingSyncCount;
 
     [ObservableProperty]
@@ -95,6 +101,9 @@ public partial class SalesViewModel : ObservableObject
 
         // Mettre à jour les compteurs
         await RefreshCountersAsync();
+
+        // Date d'aujourd'hui
+        TodayDate = DateTime.Now.ToString("dd/MM/yyyy");
 
         // État de la connexion
         IsOnline = await _connectivityService.CheckConnectivityAsync();
@@ -211,6 +220,7 @@ public partial class SalesViewModel : ObservableObject
         var stats = await _ticketService.GetTodayStatsAsync(session.EmployeId);
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
+        NextTicketNumber = TodayTicketsCount + 1;
         PendingSyncCount = await _syncService.GetPendingCountAsync();
     }
 
