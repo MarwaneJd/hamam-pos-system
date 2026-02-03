@@ -1,0 +1,278 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background-dark: #0f172a;
+  --background-card: #1e293b;
+  --border-color: #334155;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  min-height: 100vh;
+  color: #f1f5f9;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+}
+
+/* Glass morphism cards */
+.glass-card {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 16px;
+}
+
+.glass-card-hover {
+  transition: all 0.3s ease;
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Animated background */
+.animated-bg {
+  background: linear-gradient(-45deg, #0f172a, #1e293b, #0f172a, #1e293b);
+  background-size: 400% 400%;
+  animation: gradient 15s ease infinite;
+}
+
+@keyframes gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Glow effects */
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+/* Buttons */
+.btn-primary {
+  @apply px-6 py-3 bg-gradient-to-r from-primary-500 to-accent-500 text-white font-semibold rounded-xl transition-all duration-300;
+}
+
+.btn-primary:hover {
+  @apply transform scale-105 shadow-lg;
+  box-shadow: 0 10px 30px rgba(59, 130, 246, 0.4);
+}
+
+.btn-secondary {
+  @apply px-6 py-3 bg-slate-700 text-white font-semibold rounded-xl border border-slate-600 transition-all duration-300;
+}
+
+.btn-secondary:hover {
+  @apply bg-slate-600 border-primary-500;
+}
+
+.btn-danger {
+  @apply px-6 py-3 bg-gradient-to-r from-danger-500 to-danger-600 text-white font-semibold rounded-xl transition-all duration-300;
+}
+
+.btn-danger:hover {
+  @apply transform scale-105;
+  box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+}
+
+/* Input styles */
+.input-field {
+  @apply w-full px-4 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 transition-all duration-300;
+}
+
+.input-field:focus {
+  @apply outline-none border-primary-500 ring-2 ring-primary-500/20;
+}
+
+/* Table styles */
+.table-container {
+  @apply overflow-x-auto rounded-xl;
+}
+
+.custom-table {
+  @apply w-full text-left border-collapse;
+}
+
+.custom-table thead {
+  @apply bg-slate-800/50;
+}
+
+.custom-table th {
+  @apply px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700;
+}
+
+.custom-table td {
+  @apply px-6 py-4 border-b border-slate-700/50 text-slate-300;
+}
+
+.custom-table tbody tr {
+  @apply transition-all duration-200;
+}
+
+.custom-table tbody tr:hover {
+  @apply bg-slate-700/30;
+}
+
+/* Stats card */
+.stat-card {
+  @apply glass-card p-6 relative overflow-hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+}
+
+/* Badge styles */
+.badge {
+  @apply px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1;
+}
+
+.badge-success {
+  @apply bg-success-500/20 text-success-400;
+}
+
+.badge-warning {
+  @apply bg-warning-500/20 text-warning-400;
+}
+
+.badge-danger {
+  @apply bg-danger-500/20 text-danger-400;
+}
+
+.badge-primary {
+  @apply bg-primary-500/20 text-primary-400;
+}
+
+/* Modal */
+.modal-overlay {
+  @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  @apply glass-card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto;
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Sidebar */
+.sidebar {
+  @apply fixed left-0 top-0 h-full w-64 bg-slate-900/95 backdrop-blur-xl border-r border-slate-700/50 z-40;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 px-4 py-3 text-slate-400 rounded-lg transition-all duration-200 mx-2;
+}
+
+.sidebar-link:hover {
+  @apply bg-slate-700/50 text-white;
+}
+
+.sidebar-link.active {
+  @apply bg-gradient-to-r from-primary-500/20 to-accent-500/20 text-primary-400 border-l-2 border-primary-500;
+}
+
+/* Loader */
+.loader {
+  @apply w-8 h-8 border-4 border-slate-600 border-t-primary-500 rounded-full animate-spin;
+}
+
+/* React DatePicker customization */
+.react-datepicker-wrapper {
+  @apply w-full;
+}
+
+.react-datepicker__input-container input {
+  @apply input-field;
+}
+
+.react-datepicker {
+  @apply !bg-slate-800 !border-slate-700 !rounded-xl !shadow-2xl !font-sans;
+}
+
+.react-datepicker__header {
+  @apply !bg-slate-700 !border-slate-600 !rounded-t-xl;
+}
+
+.react-datepicker__current-month,
+.react-datepicker__day-name,
+.react-datepicker__day {
+  @apply !text-slate-200;
+}
+
+.react-datepicker__day:hover {
+  @apply !bg-primary-500;
+}
+
+.react-datepicker__day--selected {
+  @apply !bg-primary-500;
+}
+
+.react-datepicker__day--keyboard-selected {
+  @apply !bg-primary-400;
+}
+
+/* Toastify customization */
+.Toastify__toast {
+  @apply !bg-slate-800 !text-white !rounded-xl;
+}
+
+.Toastify__progress-bar {
+  @apply !bg-gradient-to-r !from-primary-500 !to-accent-500;
+}

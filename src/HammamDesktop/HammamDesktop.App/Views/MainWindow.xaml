@@ -1,0 +1,304 @@
+<Window x:Class="HammamDesktop.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:converters="clr-namespace:HammamDesktop.Converters"
+        mc:Ignorable="d"
+        Title="Hammam - Point de Vente"
+        Height="800" Width="1200"
+        MinHeight="600" MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
+        Background="{StaticResource BackgroundDark}"
+        TextElement.Foreground="{StaticResource TextPrimary}"
+        TextElement.FontFamily="Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto">
+
+    <Window.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+        <converters:BoolToTextConverter x:Key="BoolToTextConverter"/>
+        <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter"/>
+        <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
+        <converters:IconNameToKindConverter x:Key="IconNameToKindConverter"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" 
+                Background="{StaticResource CardBackground}"
+                BorderBrush="{StaticResource BorderColor}"
+                BorderThickness="0,0,0,1"
+                Padding="24,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Logo et infos -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="Pool" 
+                                             Width="40" Height="40"
+                                             Foreground="#3B82F6"
+                                             VerticalAlignment="Center"/>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding HammamNom}" 
+                                   FontSize="20" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <TextBlock Text="{Binding EmployeNom}" 
+                                   FontSize="14"
+                                   Foreground="{StaticResource TextSecondary}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Indicateur de connexion -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,24,0">
+                    <Ellipse Width="12" Height="12" 
+                             VerticalAlignment="Center"
+                             Fill="{Binding IsOnline, Converter={StaticResource BoolToColorConverter}}"/>
+                    <TextBlock Text="{Binding IsOnline, Converter={StaticResource BoolToTextConverter}}"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondary}"/>
+                    
+                    <!-- Badge sync pending -->
+                    <Border Margin="16,0,0,0" 
+                            Background="#F59E0B" 
+                            CornerRadius="12"
+                            Padding="8,4"
+                            Visibility="{Binding PendingSyncCount, Converter={StaticResource IntToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="CloudSync" Width="16" Height="16" Foreground="White"/>
+                            <TextBlock Text="{Binding PendingSyncCount}" 
+                                       Margin="4,0,0,0"
+                                       Foreground="White" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Boutons -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Command="{Binding ForceSyncCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            Foreground="{StaticResource TextSecondary}"
+                            BorderBrush="{StaticResource BorderColor}"
+                            Margin="0,0,8,0"
+                            ToolTip="Synchroniser maintenant">
+                        <materialDesign:PackIcon Kind="CloudSync" Width="20" Height="20"/>
+                    </Button>
+                    <Button Command="{Binding LogoutCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            Foreground="#EF4444"
+                            BorderBrush="#EF4444"
+                            ToolTip="Déconnexion">
+                        <materialDesign:PackIcon Kind="Logout" Width="20" Height="20"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Zone principale avec les boutons de vente -->
+        <Grid Grid.Row="1" Margin="48">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Boutons de vente - 3 par ligne -->
+            <ItemsControl Grid.Row="0" 
+                          ItemsSource="{Binding TicketTypes}"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" HorizontalAlignment="Center"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Command="{Binding DataContext.SellTicketCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}"
+                                Width="200" Height="220"
+                                Margin="12"
+                                Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="border"
+                                            Background="{StaticResource CardBackground}"
+                                            BorderBrush="{StaticResource BorderColor}"
+                                            BorderThickness="2"
+                                            CornerRadius="20"
+                                            ClipToBounds="True">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="20" 
+                                                              ShadowDepth="0"
+                                                              Opacity="0.3"
+                                                              Color="Black"/>
+                                        </Border.Effect>
+                                        <Grid Margin="20">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Icône -->
+                                            <Border Grid.Row="0"
+                                                    Width="70" Height="70"
+                                                    CornerRadius="35"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,5,0,10">
+                                                <Border.Background>
+                                                    <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
+                                                </Border.Background>
+                                                <materialDesign:PackIcon Kind="{Binding Icone, Converter={StaticResource IconNameToKindConverter}}"
+                                                                         Width="38" Height="38"
+                                                                         HorizontalAlignment="Center"
+                                                                         VerticalAlignment="Center">
+                                                    <materialDesign:PackIcon.Foreground>
+                                                        <SolidColorBrush Color="{Binding Couleur}"/>
+                                                    </materialDesign:PackIcon.Foreground>
+                                                </materialDesign:PackIcon>
+                                            </Border>
+
+                                            <TextBlock Grid.Row="1"
+                                                       Text="{Binding Nom}"
+                                                       FontSize="20" FontWeight="Bold"
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       Margin="0,5,0,5"/>
+
+                                            <!-- Prix -->
+                                            <TextBlock Grid.Row="2"
+                                                       HorizontalAlignment="Center"
+                                                       Margin="0,5,0,10">
+                                                <Run Text="{Binding Prix, StringFormat={}{0:N0}}" 
+                                                     FontSize="26" FontWeight="Bold"
+                                                     Foreground="#22C55E"/>
+                                                <Run Text=" DH" 
+                                                     FontSize="14"
+                                                     Foreground="{StaticResource TextSecondary}"/>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="border" Property="BorderBrush">
+                                                <Setter.Value>
+                                                    <SolidColorBrush Color="{Binding Couleur}"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Setter TargetName="border" Property="RenderTransform">
+                                                <Setter.Value>
+                                                    <ScaleTransform ScaleX="1.02" ScaleY="1.02"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="border" Property="RenderTransform">
+                                                <Setter.Value>
+                                                    <ScaleTransform ScaleX="0.98" ScaleY="0.98"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Confirmation de vente -->
+            <Border Grid.Row="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,32"
+                    Visibility="{Binding ShowConfirmation, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Border Background="#22C55E"
+                        CornerRadius="16"
+                        Padding="32,16">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="CheckCircle" 
+                                                 Width="32" Height="32"
+                                                 Foreground="White"
+                                                 VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding LastSaleMessage}"
+                                   Margin="12,0,0,0"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="White"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Border>
+        </Grid>
+
+        <!-- Footer avec statistiques -->
+        <Border Grid.Row="2"
+                Background="{StaticResource CardBackground}"
+                BorderBrush="{StaticResource BorderColor}"
+                BorderThickness="0,1,0,0"
+                Padding="24,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Tickets aujourd'hui -->
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                    <TextBlock Text="TICKETS AUJOURD'HUI"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TodayTicketsCount}"
+                               FontSize="48" FontWeight="Bold"
+                               Foreground="#3B82F6"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Revenus aujourd'hui -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                    <TextBlock Text="REVENUS AUJOURD'HUI"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock HorizontalAlignment="Center">
+                        <Run Text="{Binding TodayRevenue, StringFormat={}{0:N0}}"
+                             FontSize="48" FontWeight="Bold"
+                             Foreground="#22C55E"/>
+                        <Run Text=" DH"
+                             FontSize="24"
+                             Foreground="{StaticResource TextSecondary}"/>
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- Heure -->
+                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                    <TextBlock Text="HEURE ACTUELLE"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondary}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="TimeDisplay"
+                               FontSize="48" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimary}"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
