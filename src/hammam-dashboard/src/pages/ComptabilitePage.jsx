@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { 
-  Calculator, 
-  Building2, 
+import {
+  Calculator,
+  Building2,
   Calendar,
   User,
   TrendingUp,
@@ -12,14 +12,17 @@ import {
   ChevronUp,
   Save,
   Eye,
-  Receipt
+  Receipt,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import api from '../services/api';
+import * as XLSX from 'xlsx';
 
 export default function ComptabilitePage() {
   const [hammams, setHammams] = useState([]);
   const [selectedHammam, setSelectedHammam] = useState('');
-  
+
   // Fonction pour obtenir la date du jour au format YYYY-MM-DD
   const getTodayDate = () => {
     const now = new Date();
@@ -28,7 +31,7 @@ export default function ComptabilitePage() {
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
-  
+
   const [dateDebut, setDateDebut] = useState(getTodayDate());
   const [dateFin, setDateFin] = useState(getTodayDate());
   const [resumeData, setResumeData] = useState(null);
@@ -67,7 +70,7 @@ export default function ComptabilitePage() {
 
   const fetchResume = async () => {
     if (!selectedHammam) return;
-    
+
     setLoading(true);
     try {
       const response = await api.get('/comptabilite/resume', {
@@ -101,7 +104,7 @@ export default function ComptabilitePage() {
         montantRemis: parseFloat(montantRemis),
         commentaire: commentaire || null
       });
-      
+
       setEditingVersement(null);
       setMontantRemis('');
       setCommentaire('');
@@ -136,7 +139,7 @@ export default function ComptabilitePage() {
 
   const saveInlineEdit = async () => {
     if (!inlineEdit || !inlineEdit.value) return;
-    
+
     setSaving(true);
     try {
       await api.post('/comptabilite/versement', {
@@ -145,7 +148,7 @@ export default function ComptabilitePage() {
         montantRemis: parseFloat(inlineEdit.value),
         commentaire: null
       });
-      
+
       setInlineEdit(null);
       fetchResume();
     } catch (error) {
@@ -164,9 +167,9 @@ export default function ComptabilitePage() {
       const day = String(d.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     };
-    
+
     let debut = new Date();
-    
+
     switch (period) {
       case 'today':
         setDateDebut(formatDate(now));
@@ -186,7 +189,7 @@ export default function ComptabilitePage() {
         debut = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
     }
-    
+
     setDateDebut(formatDate(debut));
     setDateFin(formatDate(now));
   };
@@ -203,6 +206,142 @@ export default function ComptabilitePage() {
     return `${amount?.toFixed(2) || '0.00'} DH`;
   };
 
+  // Export CSV function
+  const exportToCSV = () => {
+    if (!resumeData?.employes?.length) {
+      alert('Aucune donnée à exporter');
+      return;
+    }
+
+    // CSV Headers
+    const headers = [
+      'Employé',
+      'Username',
+      'Date',
+      'Tickets',
+      'Théorique (DH)',
+      'Remis (DH)',
+      'Écart (DH)',
+      'Status'
+    ];
+
+    // CSV Rows
+    const rows = [];
+
+    resumeData.employes.forEach(employe => {
+      employe.joursDetails.forEach(jour => {
+        rows.push([
+          employe.employeNom,
+          employe.username,
+          jour.date,
+          jour.nombreTickets,
+          jour.montantTheorique?.toFixed(2) || '0.00',
+          jour.montantRemis?.toFixed(2) || 'Non saisi',
+          jour.ecart !== null ? jour.ecart.toFixed(2) : 'N/A',
+          jour.estValide ? (jour.ecart >= 0 ? 'OK' : 'Déficit') : 'En attente'
+        ]);
+      });
+
+      // Add summary row for employee
+      rows.push([
+        `TOTAL - ${employe.employeNom}`,
+        '',
+        `${dateDebut} - ${dateFin}`,
+        employe.totalTickets,
+        employe.totalTheorique?.toFixed(2) || '0.00',
+        employe.totalRemis?.toFixed(2) || '0.00',
+        employe.totalEcart?.toFixed(2) || '0.00',
+        '---'
+      ]);
+      rows.push([]); // Empty row separator
+    });
+
+    // Build CSV content
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    // Create and download file
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
+    const filename = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.csv`;
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Export Excel function
+  const exportToExcel = () => {
+    if (!resumeData?.employes?.length) {
+      alert('Aucune donnée à exporter');
+      return;
+    }
+
+    // Prepare data for Excel
+    const allData = [];
+
+    resumeData.employes.forEach(employe => {
+      employe.joursDetails.forEach(jour => {
+        allData.push({
+          'Employé': employe.employeNom,
+          'Username': employe.username,
+          'Date': jour.date,
+          'Tickets': jour.nombreTickets,
+          'Théorique (DH)': jour.montantTheorique || 0,
+          'Remis (DH)': jour.montantRemis !== null ? jour.montantRemis : 'Non saisi',
+          'Écart (DH)': jour.ecart !== null ? jour.ecart : 'N/A',
+          'Status': jour.estValide ? (jour.ecart >= 0 ? 'OK' : 'Déficit') : 'En attente'
+        });
+      });
+
+      // Add summary row
+      allData.push({
+        'Employé': `TOTAL - ${employe.employeNom}`,
+        'Username': '',
+        'Date': `${dateDebut} - ${dateFin}`,
+        'Tickets': employe.totalTickets,
+        'Théorique (DH)': employe.totalTheorique || 0,
+        'Remis (DH)': employe.totalRemis || 0,
+        'Écart (DH)': employe.totalEcart || 0,
+        'Status': '---'
+      });
+      allData.push({}); // Empty row separator
+    });
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(allData);
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 25 }, // Employé
+      { wch: 15 }, // Username
+      { wch: 25 }, // Date
+      { wch: 10 }, // Tickets
+      { wch: 15 }, // Théorique
+      { wch: 15 }, // Remis
+      { wch: 15 }, // Écart
+      { wch: 12 }  // Status
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Comptabilité');
+
+    // Generate filename and download
+    const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
+    const filename = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+  };
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -215,6 +354,44 @@ export default function ComptabilitePage() {
           <p className="text-slate-400 mt-1">
             Gestion des versements et suivi des écarts
           </p>
+        </div>
+
+        {/* Export Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={!resumeData?.employes?.length || loading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+          >
+            <Download className="w-5 h-5" />
+            Exporter
+            <ChevronDown className="w-4 h-4" />
+          </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+              <button
+                onClick={() => { exportToCSV(); setShowExportMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-slate-700 rounded-t-lg transition-colors"
+              >
+                <Download className="w-5 h-5 text-green-400" />
+                <div className="text-left">
+                  <p className="font-medium">CSV</p>
+                  <p className="text-xs text-slate-400">Format universel</p>
+                </div>
+              </button>
+              <button
+                onClick={() => { exportToExcel(); setShowExportMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-slate-700 rounded-b-lg transition-colors border-t border-slate-700"
+              >
+                <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+                <div className="text-left">
+                  <p className="font-medium">Excel (.xlsx)</p>
+                  <p className="text-xs text-slate-400">Microsoft Excel</p>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -347,9 +524,8 @@ export default function ComptabilitePage() {
                     </div>
 
                     {/* Icône écart */}
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      employe.totalEcart >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${employe.totalEcart >= 0 ? 'bg-emerald-500/20' : 'bg-red-500/20'
+                      }`}>
                       {employe.totalEcart >= 0 ? (
                         <TrendingUp className="w-5 h-5 text-emerald-400" />
                       ) : (
@@ -401,7 +577,7 @@ export default function ComptabilitePage() {
                                   type="number"
                                   step="0.01"
                                   value={inlineEdit.value}
-                                  onChange={(e) => setInlineEdit({...inlineEdit, value: e.target.value})}
+                                  onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
                                   className="w-24 bg-slate-700 border border-emerald-500 rounded px-2 py-1 text-white text-right font-medium focus:ring-2 focus:ring-emerald-500"
                                   placeholder="0.00"
                                   autoFocus
@@ -425,7 +601,7 @@ export default function ComptabilitePage() {
                                 </button>
                               </div>
                             ) : (
-                              <div 
+                              <div
                                 className="text-right cursor-pointer hover:bg-slate-600/50 rounded px-2 py-1 -mr-2"
                                 onClick={() => startInlineEdit(employe.employeId, jour)}
                               >
@@ -450,11 +626,10 @@ export default function ComptabilitePage() {
                           </td>
                           <td className="px-4 py-3 text-center">
                             {jour.estValide ? (
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                                jour.ecart >= 0 
-                                  ? 'bg-emerald-500/20 text-emerald-400' 
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${jour.ecart >= 0
+                                  ? 'bg-emerald-500/20 text-emerald-400'
                                   : 'bg-red-500/20 text-red-400'
-                              }`}>
+                                }`}>
                                 {jour.ecart >= 0 ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                                 {jour.ecart >= 0 ? 'OK' : 'Déficit'}
                               </span>
@@ -506,7 +681,7 @@ export default function ComptabilitePage() {
             <h3 className="text-xl font-bold text-white mb-4">
               Saisir le versement
             </h3>
-            
+
             <div className="space-y-4">
               <div className="bg-slate-700/50 rounded-lg p-4">
                 <p className="text-slate-400">Employé</p>
@@ -544,19 +719,17 @@ export default function ComptabilitePage() {
               </div>
 
               {montantRemis && (
-                <div className={`rounded-lg p-4 ${
-                  parseFloat(montantRemis) >= editingVersement.jour.montantTheorique
+                <div className={`rounded-lg p-4 ${parseFloat(montantRemis) >= editingVersement.jour.montantTheorique
                     ? 'bg-emerald-500/20'
                     : 'bg-red-500/20'
-                }`}>
+                  }`}>
                   <p className={parseFloat(montantRemis) >= editingVersement.jour.montantTheorique ? 'text-emerald-300' : 'text-red-300'}>
                     Écart
                   </p>
-                  <p className={`text-2xl font-bold ${
-                    parseFloat(montantRemis) >= editingVersement.jour.montantTheorique
+                  <p className={`text-2xl font-bold ${parseFloat(montantRemis) >= editingVersement.jour.montantTheorique
                       ? 'text-emerald-400'
                       : 'text-red-400'
-                  }`}>
+                    }`}>
                     {(parseFloat(montantRemis) - editingVersement.jour.montantTheorique) >= 0 ? '+' : ''}
                     {formatMoney(parseFloat(montantRemis) - editingVersement.jour.montantTheorique)}
                   </p>
