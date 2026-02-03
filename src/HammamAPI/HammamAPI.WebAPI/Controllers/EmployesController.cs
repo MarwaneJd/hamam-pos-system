@@ -26,7 +26,7 @@ public class EmployesController : ControllerBase
     /// Récupère tous les employés
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<EmployeDto>>> GetAll([FromQuery] Guid? hammamId = null)
+    public async Task<ActionResult<IEnumerable<EmployeListDto>>> GetAll([FromQuery] Guid? hammamId = null)
     {
         var employes = await _employeRepository.GetAllAsync();
         
@@ -38,7 +38,7 @@ public class EmployesController : ControllerBase
         var hammams = await _hammamRepository.GetAllAsync();
         var hammamDict = hammams.ToDictionary(h => h.Id, h => h.Nom);
 
-        var result = employes.Select(e => new EmployeDto
+        var result = employes.Select(e => new EmployeListDto
         {
             Id = e.Id,
             Nom = e.Nom,
@@ -60,7 +60,7 @@ public class EmployesController : ControllerBase
     /// Récupère les employés d'un hammam spécifique
     /// </summary>
     [HttpGet("hammam/{hammamId}")]
-    public async Task<ActionResult<IEnumerable<EmployeDto>>> GetByHammam(Guid hammamId)
+    public async Task<ActionResult<IEnumerable<EmployeListDto>>> GetByHammam(Guid hammamId)
     {
         var employes = await _employeRepository.GetAllAsync();
         employes = employes.Where(e => e.HammamId == hammamId);
@@ -68,7 +68,7 @@ public class EmployesController : ControllerBase
         var hammam = await _hammamRepository.GetByIdAsync(hammamId);
         var hammamNom = hammam?.Nom ?? "N/A";
 
-        var result = employes.Select(e => new EmployeDto
+        var result = employes.Select(e => new EmployeListDto
         {
             Id = e.Id,
             Nom = e.Nom,
@@ -90,7 +90,7 @@ public class EmployesController : ControllerBase
     /// Récupère un employé par son ID
     /// </summary>
     [HttpGet("{id}")]
-    public async Task<ActionResult<EmployeDto>> GetById(Guid id)
+    public async Task<ActionResult<EmployeListDto>> GetById(Guid id)
     {
         var employe = await _employeRepository.GetByIdAsync(id);
         if (employe == null)
@@ -98,7 +98,7 @@ public class EmployesController : ControllerBase
 
         var hammam = await _hammamRepository.GetByIdAsync(employe.HammamId);
 
-        return Ok(new EmployeDto
+        return Ok(new EmployeListDto
         {
             Id = employe.Id,
             Nom = employe.Nom,
@@ -118,7 +118,7 @@ public class EmployesController : ControllerBase
     /// Crée un nouvel employé
     /// </summary>
     [HttpPost]
-    public async Task<ActionResult<EmployeDto>> Create([FromBody] CreateEmployeDto dto)
+    public async Task<ActionResult<EmployeListDto>> Create([FromBody] CreateEmployeDto dto)
     {
         // Vérifier si le username existe déjà
         var existing = await _employeRepository.GetByUsernameAsync(dto.Username);
@@ -143,7 +143,7 @@ public class EmployesController : ControllerBase
         await _employeRepository.AddAsync(employe);
         _logger.LogInformation("Nouvel employé créé: {Username}", employe.Username);
 
-        return CreatedAtAction(nameof(GetById), new { id = employe.Id }, new EmployeDto
+        return CreatedAtAction(nameof(GetById), new { id = employe.Id }, new EmployeListDto
         {
             Id = employe.Id,
             Nom = employe.Nom,
@@ -162,7 +162,7 @@ public class EmployesController : ControllerBase
     /// Met à jour un employé
     /// </summary>
     [HttpPut("{id}")]
-    public async Task<ActionResult<EmployeDto>> Update(Guid id, [FromBody] UpdateEmployeDto dto)
+    public async Task<ActionResult<EmployeListDto>> Update(Guid id, [FromBody] UpdateEmployeDto dto)
     {
         var employe = await _employeRepository.GetByIdAsync(id);
         if (employe == null)
@@ -180,7 +180,7 @@ public class EmployesController : ControllerBase
         await _employeRepository.UpdateAsync(employe);
         _logger.LogInformation("Employé mis à jour: {Id}", id);
 
-        return Ok(new EmployeDto
+        return Ok(new EmployeListDto
         {
             Id = employe.Id,
             Nom = employe.Nom,
@@ -251,7 +251,7 @@ public class EmployesController : ControllerBase
 }
 
 // DTOs
-public class EmployeDto
+public class EmployeListDto
 {
     public Guid Id { get; set; }
     public string Nom { get; set; } = "";
