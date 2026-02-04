@@ -3,6 +3,7 @@ using System;
 using HammamAPI.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HammamAPI.Infrastructure.Migrations
 {
     [DbContext(typeof(HammamDbContext))]
-    partial class HammamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260204122645_RemoveUsernameUniqueConstraint")]
+    partial class RemoveUsernameUniqueConstraint
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

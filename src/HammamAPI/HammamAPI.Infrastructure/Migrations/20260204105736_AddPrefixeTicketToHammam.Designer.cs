@@ -3,6 +3,7 @@ using System;
 using HammamAPI.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HammamAPI.Infrastructure.Migrations
 {
     [DbContext(typeof(HammamDbContext))]
-    partial class HammamDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260204105736_AddPrefixeTicketToHammam")]
+    partial class AddPrefixeTicketToHammam
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -42,10 +45,6 @@ namespace HammamAPI.Infrastructure.Migrations
                     b.Property<Guid>("HammamId")
                         .HasColumnType("uuid")
                         .HasColumnName("hammam_id");
-
-                    b.Property<string>("Icone")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("Langue")
                         .IsRequired()
@@ -100,7 +99,8 @@ namespace HammamAPI.Infrastructure.Migrations
 
                     b.HasIndex("HammamId");
 
-                    b.HasIndex("Username");
+                    b.HasIndex("Username")
+                        .IsUnique();
 
                     b.ToTable("employe", (string)null);
 
@@ -109,12 +109,11 @@ namespace HammamAPI.Infrastructure.Migrations
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000001"),
                             Actif = true,
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 841, DateTimeKind.Utc).AddTicks(9010),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 981, DateTimeKind.Utc).AddTicks(4181),
                             HammamId = new Guid("11111111-1111-1111-1111-111111111111"),
-                            Icone = "User1",
                             Langue = "FR",
                             Nom = "Administrateur",
-                            PasswordHash = "$2a$11$XFBynzbd/KDsj3ak53drlOz4ImWaAe1NgY.A6JrMWx2r3EU0.cKbi",
+                            PasswordHash = "$2a$11$sf3Bv.Uwbp/HAfcxEDlu6eJXF0ts6mWlcn9fY61hW35KYADY0akwi",
                             Prenom = "System",
                             Role = "Admin",
                             Username = "admin"
@@ -181,7 +180,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = true,
                             Adresse = "123 Rue Principale, Casablanca",
                             Code = "HAM001",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(166),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8764),
                             Nom = "Hammam Centre",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -192,7 +191,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = true,
                             Adresse = "45 Boulevard Anfa, Casablanca",
                             Code = "HAM002",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(171),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8769),
                             Nom = "Hammam Anfa",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -203,7 +202,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = true,
                             Adresse = "78 Rue Maarif, Casablanca",
                             Code = "HAM003",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(173),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8772),
                             Nom = "Hammam Maarif",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -214,7 +213,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = true,
                             Adresse = "12 Avenue Hassan II, Casablanca",
                             Code = "HAM004",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(175),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8774),
                             Nom = "Hammam Hay Mohammadi",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -225,7 +224,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = true,
                             Adresse = "90 Derb Sultan, Casablanca",
                             Code = "HAM005",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(177),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8776),
                             Nom = "Hammam Derb Sultan",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -236,7 +235,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Actif = false,
                             Adresse = "34 Quartier Sidi Moumen, Casablanca",
                             Code = "HAM006",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(177),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8777),
                             Nom = "Hammam Sidi Moumen",
                             NomArabe = "",
                             PrefixeTicket = 100000
@@ -365,7 +364,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Id = new Guid("aaaa1111-1111-1111-1111-111111111111"),
                             Actif = true,
                             Couleur = "#3B82F6",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(320),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8912),
                             Icone = "User",
                             Nom = "HOMME",
                             Ordre = 1,
@@ -376,7 +375,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Id = new Guid("aaaa2222-2222-2222-2222-222222222222"),
                             Actif = true,
                             Couleur = "#EC4899",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(323),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8915),
                             Icone = "UserCheck",
                             Nom = "FEMME",
                             Ordre = 2,
@@ -387,7 +386,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Id = new Guid("aaaa3333-3333-3333-3333-333333333333"),
                             Actif = true,
                             Couleur = "#10B981",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(326),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8921),
                             Icone = "Baby",
                             Nom = "ENFANT",
                             Ordre = 3,
@@ -398,7 +397,7 @@ namespace HammamAPI.Infrastructure.Migrations
                             Id = new Guid("aaaa4444-4444-4444-4444-444444444444"),
                             Actif = true,
                             Couleur = "#06B6D4",
-                            CreatedAt = new DateTime(2026, 2, 4, 12, 26, 44, 719, DateTimeKind.Utc).AddTicks(329),
+                            CreatedAt = new DateTime(2026, 2, 4, 10, 57, 35, 871, DateTimeKind.Utc).AddTicks(8923),
                             Icone = "Droplets",
                             Nom = "DOUCHE",
                             Ordre = 4,

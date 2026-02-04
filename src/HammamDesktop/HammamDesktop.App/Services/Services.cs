@@ -119,6 +119,8 @@ public class AuthService : IAuthService
                 Prenom = result.Employe.Prenom,
                 HammamId = result.Employe.HammamId,
                 HammamNom = result.Employe.HammamNom,
+                HammamNomArabe = result.Employe.HammamNomArabe,
+                HammamPrefixeTicket = result.Employe.HammamPrefixeTicket,
                 Token = result.Token,
                 ExpiresAt = result.ExpiresAt,
                 CreatedAt = DateTime.UtcNow
@@ -208,9 +210,13 @@ public class AuthService : IAuthService
         string Prenom,
         Guid HammamId,
         string HammamNom,
+        string HammamNomArabe,
+        int HammamPrefixeTicket,
         string Langue,
         string Role,
-        bool Actif
+        bool Actif,
+        DateTime CreatedAt,
+        DateTime? LastLoginAt
     );
 }
 

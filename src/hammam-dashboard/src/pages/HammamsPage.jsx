@@ -74,7 +74,7 @@ export default function HammamsPage() {
 
     const openCreateModal = () => {
         setModalType('create')
-        setSelectedHammam({ code: '', nom: '', adresse: '' })
+        setSelectedHammam({ code: '', nom: '', nomArabe: '', adresse: '' })
         setNewEmployes([])
         setNewTypeTickets([
             { nom: 'HOMME', prix: 15, couleur: '#3B82F6', icone: 'User', ordre: 1 },
@@ -323,6 +323,7 @@ export default function HammamsPage() {
             if (modalType === 'create') {
                 const payload = {
                     nom: selectedHammam.nom,
+                    nomArabe: selectedHammam.nomArabe || undefined,
                     code: selectedHammam.code || undefined,
                     adresse: selectedHammam.adresse,
                     typeTickets: newTypeTickets.length > 0 ? newTypeTickets : undefined,
@@ -333,6 +334,8 @@ export default function HammamsPage() {
             } else {
                 await hammamsService.update(selectedHammam.id, {
                     nom: selectedHammam.nom,
+                    nomArabe: selectedHammam.nomArabe,
+                    prefixeTicket: selectedHammam.prefixeTicket,
                     adresse: selectedHammam.adresse,
                 })
                 toast.success('Hammam modifié avec succès')
@@ -374,12 +377,12 @@ export default function HammamsPage() {
     // Ajouter un employé au formulaire
     const addEmploye = () => {
         setNewEmployes([...newEmployes, {
-            username: '',
             password: '',
             nom: '',
             prenom: '',
             langue: 'FR',
-            role: 'Employe'
+            role: 'Employe',
+            icone: 'User1'
         }])
     }
 
@@ -574,6 +577,30 @@ export default function HammamsPage() {
                                     </div>
                                 </div>
                                 <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-2">Nom en Arabe</label>
+                                    <input
+                                        type="text"
+                                        value={selectedHammam?.nomArabe || ''}
+                                        onChange={(e) => setSelectedHammam({ ...selectedHammam, nomArabe: e.target.value })}
+                                        className="input-field text-right"
+                                        dir="rtl"
+                                        placeholder="حمام الحرية"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-2">Préfixe Ticket (6 chiffres)</label>
+                                    <input
+                                        type="number"
+                                        value={selectedHammam?.prefixeTicket || 100000}
+                                        onChange={(e) => setSelectedHammam({ ...selectedHammam, prefixeTicket: parseInt(e.target.value) || 100000 })}
+                                        className="input-field font-mono"
+                                        placeholder="822200"
+                                        min="100000"
+                                        max="999999"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Ex: 822200 → Tickets: 822201, 822202...</p>
+                                </div>
+                                <div>
                                     <label className="block text-sm font-medium text-slate-300 mb-2">Adresse</label>
                                     <textarea
                                         value={selectedHammam?.adresse || ''}
@@ -757,13 +784,16 @@ export default function HammamsPage() {
                                                                     className="input-field"
                                                                     placeholder="Nom"
                                                                 />
-                                                                <input
-                                                                    type="text"
-                                                                    value={emp.username || ''}
-                                                                    onChange={(e) => updateExistingEmployeField(emp.id, 'username', e.target.value)}
+                                                                <select
+                                                                    value={emp.icone || 'User1'}
+                                                                    onChange={(e) => updateExistingEmployeField(emp.id, 'icone', e.target.value)}
                                                                     className="input-field"
-                                                                    placeholder="Nom d'utilisateur"
-                                                                />
+                                                                >
+                                                                    <option value="User1">🔵 Icône 1 (Bleu)</option>
+                                                                    <option value="User2">🟢 Icône 2 (Vert)</option>
+                                                                    <option value="User3">🟠 Icône 3 (Orange)</option>
+                                                                    <option value="User4">🟣 Icône 4 (Violet)</option>
+                                                                </select>
                                                                 <select
                                                                     value={emp.langue || 'FR'}
                                                                     onChange={(e) => updateExistingEmployeField(emp.id, 'langue', e.target.value)}
@@ -773,6 +803,9 @@ export default function HammamsPage() {
                                                                     <option value="AR">العربية</option>
                                                                 </select>
                                                             </div>
+                                                            <p className="text-xs text-slate-500">
+                                                                Utilisateur: {emp.username}
+                                                            </p>
                                                             <div className="flex gap-2">
                                                                 <button
                                                                     type="button"
@@ -971,20 +1004,26 @@ export default function HammamsPage() {
                                                         placeholder="Prénom"
                                                     />
                                                     <input
-                                                        type="text"
-                                                        value={emp.username}
-                                                        onChange={(e) => updateEmploye(index, 'username', e.target.value)}
-                                                        className="input-field"
-                                                        placeholder="Nom d'utilisateur"
-                                                    />
-                                                    <input
                                                         type="password"
                                                         value={emp.password}
                                                         onChange={(e) => updateEmploye(index, 'password', e.target.value)}
                                                         className="input-field"
                                                         placeholder="Mot de passe"
                                                     />
+                                                    <select
+                                                        value={emp.icone || 'User1'}
+                                                        onChange={(e) => updateEmploye(index, 'icone', e.target.value)}
+                                                        className="input-field"
+                                                    >
+                                                        <option value="User1">🔵 Icône 1 (Bleu)</option>
+                                                        <option value="User2">🟢 Icône 2 (Vert)</option>
+                                                        <option value="User3">🟠 Icône 3 (Orange)</option>
+                                                        <option value="User4">🟣 Icône 4 (Violet)</option>
+                                                    </select>
                                                 </div>
+                                                <p className="text-xs text-slate-500">
+                                                    Nom d'utilisateur généré automatiquement
+                                                </p>
                                             </div>
                                         ))}
                                         {newEmployes.length === 0 && (

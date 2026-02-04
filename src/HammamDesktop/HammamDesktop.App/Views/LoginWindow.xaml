@@ -1,80 +1,149 @@
 <Window x:Class="HammamDesktop.Views.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         Title="Hammam - Connexion"
-        Height="400" Width="350"
+        Height="500" Width="450"
         WindowStartupLocation="CenterScreen"
         Background="#FFFFFF">
     
-    <Grid Margin="40">
-        <StackPanel VerticalAlignment="Center">
-            <!-- Titre -->
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Titre -->
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,20">
             <TextBlock Text="Hammam POS"
                        FontSize="32" FontWeight="Bold"
                        Foreground="#1E293B"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,40"/>
-            
-            <!-- Username -->
-            <TextBlock Text="Nom d'utilisateur"
-                       Foreground="#64748B"
-                       Margin="0,0,0,8"/>
-            <TextBox x:Name="UsernameBox"
-                     Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
-                     FontSize="14"
-                     Padding="12"
-                     Margin="0,0,0,16"
-                     Background="#F8FAFC"
-                     Foreground="#1E293B"
-                     BorderBrush="#E2E8F0"/>
-            
-            <!-- Password -->
-            <TextBlock Text="Mot de passe"
-                       Foreground="#64748B"
-                       Margin="0,0,0,8"/>
-            <PasswordBox x:Name="PasswordBox"
-                         FontSize="14"
-                         Padding="12"
-                         Margin="0,0,0,24"
-                         Background="#F8FAFC"
-                         Foreground="#1E293B"
-                         BorderBrush="#E2E8F0"
-                         PasswordChanged="PasswordBox_PasswordChanged"/>
-            
-            <!-- Message d'erreur -->
-            <TextBlock x:Name="ErrorText"
-                       Text="{Binding ErrorMessage}"
-                       Foreground="#EF4444"
-                       Margin="0,0,0,16"
-                       TextWrapping="Wrap"
-                       Visibility="Collapsed"/>
-            
-            <!-- Bouton connexion -->
-            <Button x:Name="LoginButton" 
-                    Click="LoginButton_Click"
-                    Height="45"
-                    Cursor="Hand">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="#3B82F6" CornerRadius="4">
-                            <TextBlock Text="Connexion" 
-                                       FontSize="16" 
-                                       FontWeight="SemiBold" 
-                                       Foreground="White"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-            
-            <!-- Loading -->
-            <TextBlock x:Name="LoadingText"
-                       Text="Connexion en cours..."
+                       HorizontalAlignment="Center"/>
+            <TextBlock x:Name="HammamNameText"
+                       Text=""
+                       FontSize="14"
                        Foreground="#64748B"
                        HorizontalAlignment="Center"
-                       Margin="0,16,0,0"
-                       Visibility="Collapsed"/>
+                       Margin="0,5,0,0"/>
         </StackPanel>
+
+        <!-- Contenu principal - 2 états -->
+        <Grid Grid.Row="1">
+            <!-- État 1: Sélection du profil -->
+            <StackPanel x:Name="ProfileSelectionPanel" VerticalAlignment="Center">
+                <TextBlock Text="Choisissez votre profil"
+                           FontSize="16"
+                           Foreground="#64748B"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,20"/>
+                
+                <!-- Grille des profils -->
+                <UniformGrid x:Name="ProfilesGrid" Columns="2" HorizontalAlignment="Center">
+                    <!-- Les profils seront ajoutés dynamiquement -->
+                </UniformGrid>
+
+                <!-- Message de chargement -->
+                <TextBlock x:Name="LoadingProfilesText"
+                           Text="Chargement des profils..."
+                           Foreground="#64748B"
+                           HorizontalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </StackPanel>
+
+            <!-- État 2: Saisie du mot de passe -->
+            <StackPanel x:Name="PasswordPanel" VerticalAlignment="Center" Visibility="Collapsed">
+                <!-- Profil sélectionné -->
+                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,30">
+                    <Border x:Name="SelectedProfileBorder"
+                            Width="100" Height="100"
+                            CornerRadius="50"
+                            Background="#3B82F6"
+                            HorizontalAlignment="Center">
+                        <materialDesign:PackIcon x:Name="SelectedProfileIcon"
+                                                 Kind="Account"
+                                                 Width="60" Height="60"
+                                                 Foreground="White"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock x:Name="SelectedProfileName"
+                               Text=""
+                               FontSize="20" FontWeight="SemiBold"
+                               Foreground="#1E293B"
+                               HorizontalAlignment="Center"
+                               Margin="0,10,0,0"/>
+                </StackPanel>
+
+                <!-- Mot de passe -->
+                <TextBlock Text="Entrez votre mot de passe"
+                           Foreground="#64748B"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,10"/>
+                <PasswordBox x:Name="PasswordBox"
+                             FontSize="18"
+                             Width="250"
+                             Padding="15"
+                             HorizontalAlignment="Center"
+                             Background="#F8FAFC"
+                             Foreground="#1E293B"
+                             BorderBrush="#E2E8F0"
+                             PasswordChanged="PasswordBox_PasswordChanged"/>
+
+                <!-- Message d'erreur -->
+                <TextBlock x:Name="ErrorText"
+                           Text=""
+                           Foreground="#EF4444"
+                           HorizontalAlignment="Center"
+                           Margin="0,10,0,0"
+                           Visibility="Collapsed"/>
+
+                <!-- Boutons -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                    <Button x:Name="BackButton" 
+                            Click="BackButton_Click"
+                            Width="100" Height="40"
+                            Margin="0,0,10,0"
+                            Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="#94A3B8" CornerRadius="4">
+                                    <TextBlock Text="← Retour" 
+                                               FontSize="14"
+                                               Foreground="White"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <Button x:Name="LoginButton" 
+                            Click="LoginButton_Click"
+                            Width="130" Height="40"
+                            Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="#3B82F6" CornerRadius="4">
+                                    <TextBlock Text="Connexion" 
+                                               FontSize="14" 
+                                               FontWeight="SemiBold" 
+                                               Foreground="White"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Loading -->
+        <TextBlock x:Name="LoadingText"
+                   Grid.Row="2"
+                   Text="Connexion en cours..."
+                   Foreground="#64748B"
+                   HorizontalAlignment="Center"
+                   Visibility="Collapsed"/>
     </Grid>
 </Window>

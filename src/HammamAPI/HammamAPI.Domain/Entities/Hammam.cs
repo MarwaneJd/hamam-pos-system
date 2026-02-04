@@ -10,7 +10,9 @@ public class Hammam
     public Guid Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Nom { get; set; } = string.Empty;
+    public string NomArabe { get; set; } = string.Empty;
     public string Adresse { get; set; } = string.Empty;
+    public int PrefixeTicket { get; set; } = 100000; // Préfixe pour les numéros de tickets (ex: 822200)
     public bool Actif { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

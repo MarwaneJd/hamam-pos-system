@@ -27,14 +27,24 @@ public class AuthService : IAuthService
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
-        // Récupérer l'employé par username
-        var employe = await _employeRepository.GetByUsernameAsync(request.Username);
+        // Récupérer tous les employés avec ce username (peut être plusieurs dans différents hammams)
+        var employes = await _employeRepository.GetAllByUsernameAsync(request.Username);
         
-        if (employe == null || !employe.Actif)
+        if (!employes.Any())
             return null;
 
-        // Vérifier le mot de passe avec BCrypt
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, employe.PasswordHash))
+        // Chercher l'employé avec le bon mot de passe
+        Domain.Entities.Employe? employe = null;
+        foreach (var emp in employes)
+        {
+            if (BCrypt.Net.BCrypt.Verify(request.Password, emp.PasswordHash))
+            {
+                employe = emp;
+                break;
+            }
+        }
+
+        if (employe == null)
             return null;
 
         // Mettre à jour la date de dernière connexion
@@ -62,6 +72,8 @@ public class AuthService : IAuthService
                 Prenom: employe.Prenom,
                 HammamId: employe.HammamId,
                 HammamNom: employe.Hammam?.Nom ?? "",
+                HammamNomArabe: employe.Hammam?.NomArabe ?? "",
+                HammamPrefixeTicket: employe.Hammam?.PrefixeTicket ?? 100000,
                 Langue: employe.Langue,
                 Role: employe.Role.ToString(),
                 Actif: employe.Actif,
@@ -105,6 +117,8 @@ public class AuthService : IAuthService
                 Prenom: employe.Prenom,
                 HammamId: employe.HammamId,
                 HammamNom: employe.Hammam?.Nom ?? "",
+                HammamNomArabe: employe.Hammam?.NomArabe ?? "",
+                HammamPrefixeTicket: employe.Hammam?.PrefixeTicket ?? 100000,
                 Langue: employe.Langue,
                 Role: employe.Role.ToString(),
                 Actif: employe.Actif,

@@ -72,7 +72,9 @@ public class HammamDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
 
-            entity.HasIndex(e => e.Username).IsUnique();
+            // Username n'est plus unique - plusieurs employés peuvent avoir le même username (Utilisateur1, Utilisateur2)
+            // dans différents hammams, différenciés par leur mot de passe
+            entity.HasIndex(e => e.Username);
 
             // Relations
             entity.HasMany(e => e.Tickets)

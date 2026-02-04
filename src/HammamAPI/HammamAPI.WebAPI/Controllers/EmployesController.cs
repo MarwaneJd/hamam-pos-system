@@ -49,6 +49,7 @@ public class EmployesController : ControllerBase
             HammamNom = hammamDict.GetValueOrDefault(e.HammamId, "N/A"),
             Role = e.Role.ToString(),
             Langue = e.Langue,
+            Icone = e.Icone,
             IsActif = e.Actif,
             DateCreation = e.CreatedAt
         });
@@ -79,6 +80,7 @@ public class EmployesController : ControllerBase
             HammamNom = hammamNom,
             Role = e.Role.ToString(),
             Langue = e.Langue,
+            Icone = e.Icone,
             IsActif = e.Actif,
             DateCreation = e.CreatedAt
         });
@@ -109,35 +111,39 @@ public class EmployesController : ControllerBase
             HammamNom = hammam?.Nom ?? "N/A",
             Role = employe.Role.ToString(),
             Langue = employe.Langue,
+            Icone = employe.Icone,
             IsActif = employe.Actif,
             DateCreation = employe.CreatedAt
         });
     }
 
     /// <summary>
-    /// Crée un nouvel employé
+    /// Crée un nouvel employé avec username auto-généré (Utilisateur1 ou Utilisateur2 par hammam)
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<EmployeListDto>> Create([FromBody] CreateEmployeDto dto)
     {
-        // Vérifier si le username existe déjà
-        var existing = await _employeRepository.GetByUsernameAsync(dto.Username);
-        if (existing != null)
-            return BadRequest(new { message = "Ce nom d'utilisateur existe déjà" });
+        // Compter les employés de CE hammam uniquement (hors Admin)
+        var hammamEmployes = await _employeRepository.GetByHammamIdAsync(dto.HammamId);
+        var employeCount = hammamEmployes.Count(e => e.Role != EmployeRole.Admin);
+        
+        // Générer Utilisateur1 ou Utilisateur2 selon le nombre d'employés dans ce hammam
+        var newUsername = $"Utilisateur{employeCount + 1}";
 
         var employe = new Employe
         {
             Id = Guid.NewGuid(),
             Nom = dto.Nom,
             Prenom = dto.Prenom,
-            Username = dto.Username,
+            Username = newUsername,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             PasswordClair = dto.Password, // Sauvegarder le mot de passe en clair pour affichage admin
             HammamId = dto.HammamId,
             Role = Enum.Parse<EmployeRole>(dto.Role),
             Langue = dto.Langue ?? "FR",
             Actif = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            Icone = dto.Icone ?? "User1"
         };
 
         await _employeRepository.AddAsync(employe);
@@ -153,6 +159,7 @@ public class EmployesController : ControllerBase
             HammamId = employe.HammamId,
             Role = employe.Role.ToString(),
             Langue = employe.Langue,
+            Icone = employe.Icone,
             IsActif = employe.Actif,
             DateCreation = employe.CreatedAt
         });
@@ -172,6 +179,7 @@ public class EmployesController : ControllerBase
         employe.Prenom = dto.Prenom ?? employe.Prenom;
         employe.HammamId = dto.HammamId ?? employe.HammamId;
         employe.Langue = dto.Langue ?? employe.Langue;
+        employe.Icone = dto.Icone ?? employe.Icone;
         employe.UpdatedAt = DateTime.UtcNow;
         
         if (!string.IsNullOrEmpty(dto.Role))
@@ -189,6 +197,7 @@ public class EmployesController : ControllerBase
             HammamId = employe.HammamId,
             Role = employe.Role.ToString(),
             Langue = employe.Langue,
+            Icone = employe.Icone,
             IsActif = employe.Actif,
             DateCreation = employe.CreatedAt
         });
@@ -262,6 +271,7 @@ public class EmployeListDto
     public string HammamNom { get; set; } = "";
     public string Role { get; set; } = "";
     public string Langue { get; set; } = "FR";
+    public string Icone { get; set; } = "User1";
     public bool IsActif { get; set; }
     public DateTime DateCreation { get; set; }
 }
@@ -270,11 +280,12 @@ public class CreateEmployeDto
 {
     public string Nom { get; set; } = "";
     public string Prenom { get; set; } = "";
-    public string Username { get; set; } = "";
+    public string? Username { get; set; } // Optionnel - sera auto-généré si vide
     public string Password { get; set; } = "";
     public Guid HammamId { get; set; }
     public string Role { get; set; } = "Employe";
     public string? Langue { get; set; }
+    public string? Icone { get; set; } // User1, User2, User3, User4
 }
 
 public class UpdateEmployeDto
@@ -284,6 +295,7 @@ public class UpdateEmployeDto
     public Guid? HammamId { get; set; }
     public string? Role { get; set; }
     public string? Langue { get; set; }
+    public string? Icone { get; set; } // User1, User2, User3, User4
 }
 
 public class ResetPasswordDto

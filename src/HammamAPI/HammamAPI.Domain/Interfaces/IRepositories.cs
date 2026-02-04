@@ -30,6 +30,7 @@ public interface IHammamRepository : IRepository<Hammam>
 public interface IEmployeRepository : IRepository<Employe>
 {
     Task<Employe?> GetByUsernameAsync(string username);
+    Task<IEnumerable<Employe>> GetAllByUsernameAsync(string username);
     Task<IEnumerable<Employe>> GetByHammamIdAsync(Guid hammamId);
     Task<IEnumerable<Employe>> GetAllActiveAsync();
     Task UpdateLastLoginAsync(Guid id);

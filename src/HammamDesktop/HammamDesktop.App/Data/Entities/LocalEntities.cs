@@ -93,6 +93,11 @@ public class LocalSession
     [MaxLength(100)]
     public string HammamNom { get; set; } = string.Empty;
 
+    [MaxLength(100)]
+    public string HammamNomArabe { get; set; } = string.Empty;
+
+    public int HammamPrefixeTicket { get; set; } = 100000;
+
     [Required]
     public string Token { get; set; } = string.Empty;
 

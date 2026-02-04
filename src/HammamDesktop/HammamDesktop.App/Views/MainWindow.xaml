@@ -293,10 +293,40 @@
                                FontSize="12"
                                Foreground="{StaticResource TextSecondary}"
                                HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="TimeDisplay"
-                               FontSize="48" FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimary}"
-                               HorizontalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock x:Name="TimeDisplay"
+                                   FontSize="48" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   VerticalAlignment="Center"/>
+                        <Button Command="{Binding PrintClotureCommand}"
+                                Margin="16,0,0,0"
+                                Width="50" Height="50"
+                                VerticalAlignment="Center"
+                                ToolTip="Imprimer ticket de clôture"
+                                Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="border"
+                                            Background="#F59E0B"
+                                            CornerRadius="25">
+                                        <materialDesign:PackIcon Kind="Printer"
+                                                                 Width="24" Height="24"
+                                                                 Foreground="White"
+                                                                 HorizontalAlignment="Center"
+                                                                 VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#D97706"/>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#B45309"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>

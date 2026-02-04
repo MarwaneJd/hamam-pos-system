@@ -101,6 +101,14 @@ public class EmployeRepository : Repository<Employe>, IEmployeRepository
             .FirstOrDefaultAsync(e => e.Username == username);
     }
 
+    public async Task<IEnumerable<Employe>> GetAllByUsernameAsync(string username)
+    {
+        return await _dbSet
+            .Include(e => e.Hammam)
+            .Where(e => e.Username == username && e.Actif)
+            .ToListAsync();
+    }
+
     public async Task<IEnumerable<Employe>> GetByHammamIdAsync(Guid hammamId)
     {
         return await _dbSet

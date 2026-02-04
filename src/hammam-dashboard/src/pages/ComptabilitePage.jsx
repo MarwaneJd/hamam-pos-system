@@ -128,16 +128,18 @@ export default function ComptabilitePage() {
     }
   };
 
-  const startInlineEdit = (employeId, jour) => {
+  const startInlineEdit = (employeId, jour, jourIndex = 0, employeIndex = 0) => {
     setInlineEdit({
       employeId,
       date: jour.date,
       value: jour.montantRemis?.toString() || '',
-      montantTheorique: jour.montantTheorique
+      montantTheorique: jour.montantTheorique,
+      jourIndex,
+      employeIndex
     });
   };
 
-  const saveInlineEdit = async () => {
+  const saveInlineEdit = async (goToNext = false) => {
     if (!inlineEdit || !inlineEdit.value) return;
 
     setSaving(true);
@@ -149,8 +151,35 @@ export default function ComptabilitePage() {
         commentaire: null
       });
 
+      const currentJourIndex = inlineEdit.jourIndex;
+      const currentEmployeIndex = inlineEdit.employeIndex;
+      
       setInlineEdit(null);
-      fetchResume();
+      await fetchResume();
+
+      // Si on doit aller à la ligne suivante
+      if (goToNext && resumeData?.employes) {
+        const currentEmploye = resumeData.employes[currentEmployeIndex];
+        if (currentEmploye) {
+          // Vérifier s'il y a une ligne suivante dans le même employé
+          if (currentJourIndex + 1 < currentEmploye.joursDetails.length) {
+            const nextJour = currentEmploye.joursDetails[currentJourIndex + 1];
+            setTimeout(() => {
+              startInlineEdit(currentEmploye.employeId, nextJour, currentJourIndex + 1, currentEmployeIndex);
+            }, 100);
+          } else if (currentEmployeIndex + 1 < resumeData.employes.length) {
+            // Sinon, passer au premier jour de l'employé suivant
+            const nextEmploye = resumeData.employes[currentEmployeIndex + 1];
+            if (nextEmploye.joursDetails?.length > 0) {
+              // Ouvrir d'abord l'employé suivant
+              setExpandedEmploye(nextEmploye.employeId);
+              setTimeout(() => {
+                startInlineEdit(nextEmploye.employeId, nextEmploye.joursDetails[0], 0, currentEmployeIndex + 1);
+              }, 100);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
       alert('Erreur lors de la sauvegarde');
@@ -337,7 +366,17 @@ export default function ComptabilitePage() {
     const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
     const filename = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.xlsx`;
 
-    XLSX.writeFile(wb, filename);
+    // Write file with proper options
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -484,7 +523,7 @@ export default function ComptabilitePage() {
         </div>
       ) : resumeData?.employes?.length > 0 ? (
         <div className="space-y-4">
-          {resumeData.employes.map((employe) => (
+          {resumeData.employes.map((employe, employeIndex) => (
             <div key={employe.employeId} className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700/50 overflow-hidden">
               {/* Header employé */}
               <div
@@ -559,8 +598,8 @@ export default function ComptabilitePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {employe.joursDetails.map((jour, idx) => (
-                        <tr key={idx} className="border-t border-slate-700/30 hover:bg-slate-700/20">
+                      {employe.joursDetails.map((jour, jourIndex) => (
+                        <tr key={jourIndex} className="border-t border-slate-700/30 hover:bg-slate-700/20">
                           <td className="px-4 py-3 text-white font-medium">
                             {formatDate(jour.date)}
                           </td>
@@ -582,7 +621,7 @@ export default function ComptabilitePage() {
                                   placeholder="0.00"
                                   autoFocus
                                   onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveInlineEdit();
+                                    if (e.key === 'Enter') saveInlineEdit(true);
                                     if (e.key === 'Escape') setInlineEdit(null);
                                   }}
                                 />
@@ -603,7 +642,7 @@ export default function ComptabilitePage() {
                             ) : (
                               <div
                                 className="text-right cursor-pointer hover:bg-slate-600/50 rounded px-2 py-1 -mr-2"
-                                onClick={() => startInlineEdit(employe.employeId, jour)}
+                                onClick={() => startInlineEdit(employe.employeId, jour, jourIndex, employeIndex)}
                               >
                                 {jour.montantRemis !== null ? (
                                   <span className="text-yellow-400 font-medium">

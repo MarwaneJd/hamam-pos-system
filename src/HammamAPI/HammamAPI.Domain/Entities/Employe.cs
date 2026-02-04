@@ -15,6 +15,7 @@ public class Employe
     public string Prenom { get; set; } = string.Empty;
     public Guid HammamId { get; set; }
     public string Langue { get; set; } = "FR"; // FR ou AR
+    public string Icone { get; set; } = "User1"; // Icône pour l'écran de login (User1, User2, User3, User4)
     public EmployeRole Role { get; set; } = EmployeRole.Employe;
     public bool Actif { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

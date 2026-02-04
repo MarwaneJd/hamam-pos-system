@@ -47,6 +47,11 @@ public partial class SalesViewModel : ObservableObject
     private string _hammamNom = string.Empty;
 
     [ObservableProperty]
+    private string _hammamNomArabe = string.Empty;
+
+    private int _hammamPrefixeTicket = 100000;
+
+    [ObservableProperty]
     private string _lastSaleMessage = string.Empty;
 
     [ObservableProperty]
@@ -82,6 +87,8 @@ public partial class SalesViewModel : ObservableObject
         {
             EmployeNom = $"{session.Prenom} {session.Nom}";
             HammamNom = session.HammamNom;
+            HammamNomArabe = session.HammamNomArabe;
+            _hammamPrefixeTicket = session.HammamPrefixeTicket;
         }
 
         // Charger les types de tickets
@@ -146,10 +153,11 @@ public partial class SalesViewModel : ObservableObject
             await _audioService.PlayBeepAsync();
 
             // 🖨️ IMPRESSION AUTOMATIQUE DU TICKET
-            var ticketNumber = TodayTicketsCount + 1; // Numéro du ticket
+            var ticketNumber = _hammamPrefixeTicket + TodayTicketsCount + 1; // Préfixe + numéro du jour
             await _printService.PrintTicketAsync(new TicketPrintData
             {
                 HammamNom = HammamNom,
+                HammamNomArabe = HammamNomArabe,
                 TicketNumber = ticketNumber,
                 TypeTicket = ticketType.Nom,
                 Prix = ticketType.Prix,
@@ -210,6 +218,37 @@ public partial class SalesViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Imprimer ticket de clôture
+    /// </summary>
+    [RelayCommand]
+    private async Task PrintClotureAsync()
+    {
+        try
+        {
+            // Mapping des noms arabes (en dur pour éviter les problèmes d'encodage)
+            var arabicName = HammamNom.ToLower() switch
+            {
+                "hammame liberte" => "حمام الحرية",
+                "hammam centre" => "حمام الوسط",
+                "hammam casablanca" => "حمام الدار البيضاء",
+                _ => HammamNomArabe
+            };
+
+            await _printService.PrintClotureTicketAsync(new ClotureTicketData
+            {
+                HammamNomArabe = arabicName,
+                HammamNom = HammamNom,
+                CaissierNom = EmployeNom,
+                DateHeure = DateTime.Now
+            });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Erreur lors de l'impression du ticket de clôture");
+        }
+    }
+
+    /// <summary>
     /// Rafraîchir les compteurs
     /// </summary>
     private async Task RefreshCountersAsync()
@@ -220,7 +259,7 @@ public partial class SalesViewModel : ObservableObject
         var stats = await _ticketService.GetTodayStatsAsync(session.EmployeId);
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
-        NextTicketNumber = TodayTicketsCount + 1;
+        NextTicketNumber = _hammamPrefixeTicket + TodayTicketsCount + 1;
         PendingSyncCount = await _syncService.GetPendingCountAsync();
     }
 

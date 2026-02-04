@@ -13,6 +13,20 @@ public record LoginResponse(
 
 public record RefreshTokenRequest(string RefreshToken);
 
+/// <summary>
+/// Profil employé pour l'écran de login (sans mot de passe)
+/// </summary>
+public class EmployeProfileDto
+{
+    public Guid Id { get; set; }
+    public string Username { get; set; } = "";
+    public string Prenom { get; set; } = "";
+    public string Nom { get; set; } = "";
+    public string Icone { get; set; } = "User1";
+    public Guid HammamId { get; set; }
+    public string HammamNom { get; set; } = "";
+}
+
 // ==================== EMPLOYE DTOs ====================
 
 public record EmployeDto(
@@ -22,6 +36,8 @@ public record EmployeDto(
     string Prenom,
     Guid HammamId,
     string HammamNom,
+    string HammamNomArabe,
+    int HammamPrefixeTicket,
     string Langue,
     string Role,
     bool Actif,

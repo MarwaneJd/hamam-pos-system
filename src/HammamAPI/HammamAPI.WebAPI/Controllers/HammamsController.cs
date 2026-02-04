@@ -51,6 +51,8 @@ public class HammamsController : ControllerBase
             Id = h.Id,
             Code = h.Code,
             Nom = h.Nom,
+            NomArabe = h.NomArabe,
+            PrefixeTicket = h.PrefixeTicket,
             Adresse = h.Adresse,
             IsActif = h.Actif,
             NombreEmployes = h.Employes.Count(e => e.Actif),
@@ -93,6 +95,8 @@ public class HammamsController : ControllerBase
             Id = hammam.Id,
             Code = hammam.Code,
             Nom = hammam.Nom,
+            NomArabe = hammam.NomArabe,
+            PrefixeTicket = hammam.PrefixeTicket,
             Adresse = hammam.Adresse,
             IsActif = hammam.Actif,
             NombreEmployes = hammam.Employes.Count(e => e.Actif),
@@ -126,6 +130,7 @@ public class HammamsController : ControllerBase
                 Id = Guid.NewGuid(),
                 Code = dto.Code ?? $"HAM{DateTime.Now:yyyyMMddHHmmss}",
                 Nom = dto.Nom,
+                NomArabe = dto.NomArabe ?? "",
                 Adresse = dto.Adresse ?? "",
                 Actif = true,
                 CreatedAt = DateTime.UtcNow
@@ -154,15 +159,19 @@ public class HammamsController : ControllerBase
                 }
             }
 
-            // Créer les employés si fournis
+            // Créer les employés si fournis (Utilisateur1, Utilisateur2, etc. pour CE hammam)
             if (dto.Employes != null && dto.Employes.Any())
             {
+                var counter = 1; // Commencer à 1 pour chaque nouveau hammam
+
                 foreach (var empDto in dto.Employes)
                 {
+                    var newUsername = $"Utilisateur{counter}";
+                    
                     var employe = new Employe
                     {
                         Id = Guid.NewGuid(),
-                        Username = empDto.Username,
+                        Username = newUsername,
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(empDto.Password),
                         PasswordClair = empDto.Password, // Sauvegarder le mot de passe en clair pour affichage admin
                         Nom = empDto.Nom,
@@ -170,10 +179,12 @@ public class HammamsController : ControllerBase
                         HammamId = hammam.Id,
                         Langue = empDto.Langue ?? "FR",
                         Role = Enum.Parse<EmployeRole>(empDto.Role ?? "Employe"),
+                        Icone = empDto.Icone ?? "User1",
                         Actif = true,
                         CreatedAt = DateTime.UtcNow
                     };
                     _context.Employes.Add(employe);
+                    counter++;
                 }
             }
 
@@ -188,6 +199,8 @@ public class HammamsController : ControllerBase
                 Id = hammam.Id,
                 Code = hammam.Code,
                 Nom = hammam.Nom,
+                NomArabe = hammam.NomArabe,
+                PrefixeTicket = hammam.PrefixeTicket,
                 Adresse = hammam.Adresse,
                 IsActif = hammam.Actif,
                 DateCreation = hammam.CreatedAt
@@ -212,6 +225,8 @@ public class HammamsController : ControllerBase
             return NotFound(new { message = "Hammam non trouvé" });
 
         hammam.Nom = dto.Nom ?? hammam.Nom;
+        hammam.NomArabe = dto.NomArabe ?? hammam.NomArabe;
+        hammam.PrefixeTicket = dto.PrefixeTicket ?? hammam.PrefixeTicket;
         hammam.Adresse = dto.Adresse ?? hammam.Adresse;
         hammam.UpdatedAt = DateTime.UtcNow;
 
@@ -223,6 +238,8 @@ public class HammamsController : ControllerBase
             Id = hammam.Id,
             Code = hammam.Code,
             Nom = hammam.Nom,
+            NomArabe = hammam.NomArabe,
+            PrefixeTicket = hammam.PrefixeTicket,
             Adresse = hammam.Adresse,
             IsActif = hammam.Actif,
             DateCreation = hammam.CreatedAt
@@ -278,6 +295,8 @@ public class HammamDto
     public Guid Id { get; set; }
     public string Code { get; set; } = "";
     public string Nom { get; set; } = "";
+    public string NomArabe { get; set; } = "";
+    public int PrefixeTicket { get; set; }
     public string Adresse { get; set; } = "";
     public bool IsActif { get; set; }
     public int NombreEmployes { get; set; }
@@ -300,6 +319,7 @@ public class HammamTypeTicketDto
 public class CreateHammamDto
 {
     public string Nom { get; set; } = "";
+    public string? NomArabe { get; set; }
     public string? Code { get; set; }
     public string? Adresse { get; set; }
     public List<CreateTypeTicketDto>? TypeTickets { get; set; }
@@ -317,16 +337,19 @@ public class CreateTypeTicketDto
 
 public class CreateHammamEmployeDto
 {
-    public string Username { get; set; } = "";
+    public string? Username { get; set; } // Optionnel - sera auto-généré
     public string Password { get; set; } = "";
     public string Nom { get; set; } = "";
     public string Prenom { get; set; } = "";
     public string? Langue { get; set; }
     public string? Role { get; set; }
+    public string? Icone { get; set; } // User1, User2, User3, User4
 }
 
 public class UpdateHammamDto
 {
     public string? Nom { get; set; }
+    public string? NomArabe { get; set; }
+    public int? PrefixeTicket { get; set; }
     public string? Adresse { get; set; }
 }
