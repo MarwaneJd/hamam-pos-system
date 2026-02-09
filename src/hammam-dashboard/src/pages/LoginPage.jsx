@@ -118,17 +118,6 @@ export default function LoginPage() {
                             'Se connecter'
                         )}
                     </button>
-
-                    {/* Demo credentials */}
-                    <div className="mt-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-                        <p className="text-xs text-slate-400 text-center">
-                            <span className="font-semibold text-primary-400">Démo :</span>
-                            <br />
-                            Username: <code className="bg-slate-700 px-1 rounded">admin</code>
-                            <br />
-                            Password: <code className="bg-slate-700 px-1 rounded">Admin@123</code>
-                        </p>
-                    </div>
                 </form>
 
                 {/* Footer */}
