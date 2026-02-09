@@ -95,9 +95,9 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            var origins = builder.Configuration["CorsSettings:AllowedOrigins"]??
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                ?? ["http://localhost"];
+            var origins = (builder.Configuration["CorsSettings:AllowedOrigins"]
+                ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                ?? new[] { "http://localhost" };
 
             policy.WithOrigins(origins)
                   .AllowAnyMethod()
