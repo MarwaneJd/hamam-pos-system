@@ -21,8 +21,11 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// Configurer les URLs explicitement
-builder.WebHost.UseUrls("http://localhost:5000");
+// En dev, utiliser http://localhost:5000 ; en prod, ASPNETCORE_URLS est injecté via Docker
+if (builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseUrls("http://localhost:5000");
+}
 
 // Configuration base de données
 var useInMemory = builder.Configuration.GetValue<bool>("UseInMemoryDatabase");
@@ -79,14 +82,27 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// CORS - autoriser toutes les origines en développement
+// CORS - configurable par environnement
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+        else
+        {
+            var origins = builder.Configuration["CorsSettings:AllowedOrigins"]??
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                ?? ["http://localhost"];
+
+            policy.WithOrigins(origins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 
@@ -158,13 +174,16 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Swagger toujours activé
-app.UseSwagger();
-app.UseSwaggerUI(options =>
+// Swagger uniquement en développement
+if (app.Environment.IsDevelopment())
 {
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Hammam API v1");
-    options.RoutePrefix = "swagger";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Hammam API v1");
+        options.RoutePrefix = "swagger";
+    });
+}
 
 app.UseCors("AllowAll");
 app.UseAuthentication();
@@ -178,12 +197,11 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 // Endpoint d'accueil
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
+var urls = app.Urls.Any() ? string.Join(", ", app.Urls) : "http://localhost:5000";
 Log.Information("========================================");
 Log.Information("🚀 HAMMAM API DÉMARRÉE");
-Log.Information("========================================");
-Log.Information("📍 API:     http://localhost:5000");
-Log.Information("📖 Swagger: http://localhost:5000/swagger");
-Log.Information("❤️ Health:  http://localhost:5000/health");
+Log.Information("📍 Environment: {Env}", app.Environment.EnvironmentName);
+Log.Information("📍 URLs: {Urls}", urls);
 Log.Information("========================================");
 
 app.Run();

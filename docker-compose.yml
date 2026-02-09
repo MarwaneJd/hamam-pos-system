@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    container_name: hammam-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hammam_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hammam_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # .NET 8 API
+  # ============================================
+  api:
+    build:
+      context: ./src/HammamAPI
+      dockerfile: Dockerfile
+    container_name: hammam-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=hammam_db;Username=postgres;Password=${POSTGRES_PASSWORD}"
+      JwtSettings__Secret: ${JWT_SECRET}
+      JwtSettings__Issuer: HammamAPI
+      JwtSettings__Audience: HammamClients
+      CorsSettings__AllowedOrigins: ${CORS_ORIGINS}
+      UseInMemoryDatabase: "false"
+    volumes:
+      - api_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # React Dashboard (Nginx)
+  # ============================================
+  dashboard:
+    build:
+      context: ./src/hammam-dashboard
+      dockerfile: Dockerfile
+    container_name: hammam-dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+    driver: local
+  api_logs:
+    driver: local
