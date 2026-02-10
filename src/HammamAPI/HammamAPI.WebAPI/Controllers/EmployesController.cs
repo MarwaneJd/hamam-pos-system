@@ -32,7 +32,7 @@ public class EmployesController : ControllerBase
         
         if (hammamId.HasValue)
         {
-            employes = employes.Where(e => e.HammamId == hammamId.Value);
+            employes = employes.Where(e => e.HammamId == hammamId.Value && e.Role != EmployeRole.Admin);
         }
 
         var hammams = await _hammamRepository.GetAllAsync();
@@ -64,7 +64,7 @@ public class EmployesController : ControllerBase
     public async Task<ActionResult<IEnumerable<EmployeListDto>>> GetByHammam(Guid hammamId)
     {
         var employes = await _employeRepository.GetAllAsync();
-        employes = employes.Where(e => e.HammamId == hammamId);
+        employes = employes.Where(e => e.HammamId == hammamId && e.Role != EmployeRole.Admin);
 
         var hammam = await _hammamRepository.GetByIdAsync(hammamId);
         var hammamNom = hammam?.Nom ?? "N/A";

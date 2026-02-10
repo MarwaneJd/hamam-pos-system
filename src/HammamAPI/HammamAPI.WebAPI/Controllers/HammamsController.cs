@@ -55,7 +55,7 @@ public class HammamsController : ControllerBase
             PrefixeTicket = h.PrefixeTicket,
             Adresse = h.Adresse,
             IsActif = h.Actif,
-            NombreEmployes = h.Employes.Count(e => e.Actif),
+            NombreEmployes = h.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
             TicketsAujourdhui = h.Tickets.Count(t => t.CreatedAt.Date == today),
             RecetteAujourdhui = h.Tickets.Where(t => t.CreatedAt.Date == today).Sum(t => t.Prix),
             TypeTickets = h.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
@@ -99,7 +99,7 @@ public class HammamsController : ControllerBase
             PrefixeTicket = hammam.PrefixeTicket,
             Adresse = hammam.Adresse,
             IsActif = hammam.Actif,
-            NombreEmployes = hammam.Employes.Count(e => e.Actif),
+            NombreEmployes = hammam.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
             TicketsAujourdhui = hammam.Tickets.Count(t => t.CreatedAt.Date == today),
             RecetteAujourdhui = hammam.Tickets.Where(t => t.CreatedAt.Date == today).Sum(t => t.Prix),
             TypeTickets = hammam.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
