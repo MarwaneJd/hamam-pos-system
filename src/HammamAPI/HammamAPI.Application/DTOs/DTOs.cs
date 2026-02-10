@@ -118,6 +118,7 @@ public record TypeTicketDto(
     decimal Prix,
     string Couleur,
     string Icone,
+    string? ImageUrl,
     int Ordre,
     bool Actif,
     Guid? HammamId
@@ -128,6 +129,7 @@ public record CreateTypeTicketRequest(
     decimal Prix,
     string Couleur = "#3B82F6",
     string Icone = "User",
+    string? ImageUrl = null,
     int Ordre = 0,
     Guid? HammamId = null
 );
@@ -137,6 +139,7 @@ public record UpdateTypeTicketRequest(
     decimal? Prix,
     string? Couleur,
     string? Icone,
+    string? ImageUrl,
     int? Ordre,
     bool? Actif
 );

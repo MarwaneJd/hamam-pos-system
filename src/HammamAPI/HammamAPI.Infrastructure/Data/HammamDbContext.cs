@@ -93,6 +93,7 @@ public class HammamDbContext : DbContext
             entity.Property(t => t.Prix).HasColumnName("prix").HasPrecision(10, 2);
             entity.Property(t => t.Couleur).HasColumnName("couleur").HasMaxLength(20);
             entity.Property(t => t.Icone).HasColumnName("icone").HasMaxLength(50).HasDefaultValue("User");
+            entity.Property(t => t.ImageUrl).HasColumnName("image_url").HasMaxLength(500);
             entity.Property(t => t.Ordre).HasColumnName("ordre");
             entity.Property(t => t.Actif).HasColumnName("actif").HasDefaultValue(true);
             entity.Property(t => t.CreatedAt).HasColumnName("created_at");

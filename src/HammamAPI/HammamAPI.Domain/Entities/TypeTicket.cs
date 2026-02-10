@@ -13,6 +13,7 @@ public class TypeTicket
     public decimal Prix { get; set; }
     public string Couleur { get; set; } = "#3B82F6"; // Couleur pour l'affichage
     public string Icone { get; set; } = "User"; // Nom de l'icône (User, UserCheck, Baby, Droplets, etc.)
+    public string? ImageUrl { get; set; } // URL de l'image/logo du produit
     public int Ordre { get; set; } = 0; // Ordre d'affichage
     public bool Actif { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

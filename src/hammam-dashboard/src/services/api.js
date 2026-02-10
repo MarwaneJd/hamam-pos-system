@@ -366,6 +366,26 @@ export const typeTicketsService = {
         const response = await api.patch(`/typetickets/${id}/toggle-status`)
         return response.data
     },
+
+    /**
+     * Upload une image pour un type de ticket
+     */
+    uploadImage: async (id, file) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        const response = await api.post(`/typetickets/${id}/upload-image`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        return response.data
+    },
+
+    /**
+     * Supprimer l'image d'un type de ticket
+     */
+    deleteImage: async (id) => {
+        const response = await api.delete(`/typetickets/${id}/image`)
+        return response.data
+    },
 }
 
 // ==================== RAPPORTS SERVICE ====================
