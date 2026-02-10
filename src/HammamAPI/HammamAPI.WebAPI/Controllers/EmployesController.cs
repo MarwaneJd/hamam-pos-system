@@ -245,13 +245,16 @@ public class EmployesController : ControllerBase
     [HttpPatch("{id}/reset-password")]
     public async Task<ActionResult> ResetPassword(Guid id, [FromBody] ResetPasswordDto dto)
     {
-        // Valider que le mot de passe est numérique uniquement
-        if (string.IsNullOrEmpty(dto.NewPassword) || !dto.NewPassword.All(char.IsDigit))
-            return BadRequest(new { message = "Le mot de passe doit contenir uniquement des chiffres" });
+        if (string.IsNullOrEmpty(dto.NewPassword))
+            return BadRequest(new { message = "Le mot de passe ne peut pas être vide" });
 
         var employe = await _employeRepository.GetByIdAsync(id);
         if (employe == null)
             return NotFound(new { message = "Employé non trouvé" });
+
+        // Les employés (non-admin) doivent avoir un mot de passe numérique uniquement
+        if (employe.Role != Domain.Entities.EmployeRole.Admin && !dto.NewPassword.All(char.IsDigit))
+            return BadRequest(new { message = "Le mot de passe doit contenir uniquement des chiffres" });
 
         // Vérifier que le mot de passe est unique parmi les employés avec le même username
         var sameUsernameEmployes = await _employeRepository.GetAllByUsernameAsync(employe.Username);
