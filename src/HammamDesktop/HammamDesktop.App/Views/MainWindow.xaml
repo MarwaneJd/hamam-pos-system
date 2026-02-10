@@ -24,6 +24,8 @@
         <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter"/>
         <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
         <converters:IconNameToKindConverter x:Key="IconNameToKindConverter"/>
+        <converters:ImagePathToSourceConverter x:Key="ImagePathToSourceConverter"/>
+        <converters:HasImageToVisibilityConverter x:Key="HasImageToVisibilityConverter"/>
     </Window.Resources>
 
     <Grid>
@@ -153,25 +155,37 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <!-- Icône -->
-                                            <Border Grid.Row="0"
-                                                    Width="70" Height="70"
-                                                    CornerRadius="35"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Margin="0,5,0,10">
-                                                <Border.Background>
-                                                    <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
-                                                </Border.Background>
-                                                <materialDesign:PackIcon Kind="{Binding Icone, Converter={StaticResource IconNameToKindConverter}}"
-                                                                         Width="38" Height="38"
-                                                                         HorizontalAlignment="Center"
-                                                                         VerticalAlignment="Center">
-                                                    <materialDesign:PackIcon.Foreground>
-                                                        <SolidColorBrush Color="{Binding Couleur}"/>
-                                                    </materialDesign:PackIcon.Foreground>
-                                                </materialDesign:PackIcon>
-                                            </Border>
+                                            <!-- Product image or icon -->
+                                            <Grid Grid.Row="0"
+                                                  Width="70" Height="70"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,5,0,10">
+                                                <!-- Uploaded product image -->
+                                                <Border CornerRadius="12"
+                                                        ClipToBounds="True"
+                                                        Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}}">
+                                                    <Image Source="{Binding LocalImagePath, Converter={StaticResource ImagePathToSourceConverter}}"
+                                                           Stretch="Uniform"
+                                                           Width="64" Height="64"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                </Border>
+                                                <!-- Fallback: MaterialDesign icon -->
+                                                <Border CornerRadius="35"
+                                                        Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}, ConverterParameter=Invert}">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
+                                                    </Border.Background>
+                                                    <materialDesign:PackIcon Kind="{Binding Icone, Converter={StaticResource IconNameToKindConverter}}"
+                                                                             Width="38" Height="38"
+                                                                             HorizontalAlignment="Center"
+                                                                             VerticalAlignment="Center">
+                                                        <materialDesign:PackIcon.Foreground>
+                                                            <SolidColorBrush Color="{Binding Couleur}"/>
+                                                        </materialDesign:PackIcon.Foreground>
+                                                    </materialDesign:PackIcon>
+                                                </Border>
+                                            </Grid>
 
                                             <TextBlock Grid.Row="1"
                                                        Text="{Binding Nom}"

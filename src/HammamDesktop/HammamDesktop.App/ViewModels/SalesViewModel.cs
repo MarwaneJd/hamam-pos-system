@@ -102,7 +102,9 @@ public partial class SalesViewModel : ObservableObject
                 Nom = type.Nom,
                 Prix = type.Prix,
                 Couleur = type.Couleur,
-                Icone = type.Icone ?? "User"
+                Icone = type.Icone ?? "User",
+                ImageUrl = type.ImageUrl,
+                LocalImagePath = type.LocalImagePath
             });
         }
 
@@ -282,4 +284,7 @@ public partial class TicketTypeViewModel : ObservableObject
     public decimal Prix { get; set; }
     public string Couleur { get; set; } = "#3B82F6";
     public string Icone { get; set; } = "User"; // Nom de l'icône (User, UserCheck, Baby, Droplets)
+    public string? ImageUrl { get; set; }
+    public string? LocalImagePath { get; set; }
+    public bool HasImage => !string.IsNullOrEmpty(LocalImagePath) && System.IO.File.Exists(LocalImagePath);
 }

@@ -282,15 +282,33 @@ public class TicketService : ITicketService
                     // Ajouter les nouveaux types
                     foreach (var apiType in apiTypes)
                     {
-                        _db.TypeTickets.Add(new LocalTypeTicket
+                        var localType = new LocalTypeTicket
                         {
                             Id = apiType.Id,
                             Nom = apiType.Nom,
                             Prix = apiType.Prix,
                             Couleur = apiType.Couleur ?? "#3B82F6",
                             Icone = apiType.Icone ?? "User",
+                            ImageUrl = apiType.ImageUrl,
                             Ordre = apiType.Ordre
-                        });
+                        };
+
+                        // Download product image locally for offline use
+                        if (!string.IsNullOrEmpty(apiType.ImageUrl))
+                        {
+                            try
+                            {
+                                var localPath = await DownloadProductImageAsync(client, apiType.ImageUrl, apiType.Id);
+                                if (localPath != null)
+                                    localType.LocalImagePath = localPath;
+                            }
+                            catch (Exception imgEx)
+                            {
+                                Serilog.Log.Warning(imgEx, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
+                            }
+                        }
+
+                        _db.TypeTickets.Add(localType);
                     }
                     
                     await _db.SaveChangesAsync();
@@ -304,6 +322,28 @@ public class TicketService : ITicketService
             Serilog.Log.Error(ex, "Erreur lors de la synchronisation des types de tickets");
             _typesSynced = true; // Marquer comme tenté pour éviter les boucles
         }
+    }
+
+    private static async Task<string?> DownloadProductImageAsync(HttpClient client, string imageUrl, Guid typeId)
+    {
+        var imagesDir = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "HammamDesktop", "images", "products");
+        System.IO.Directory.CreateDirectory(imagesDir);
+
+        var ext = System.IO.Path.GetExtension(imageUrl).Split('?')[0]; // strip query params
+        if (string.IsNullOrEmpty(ext)) ext = ".png";
+        var localFileName = $"{typeId}{ext}";
+        var localPath = System.IO.Path.Combine(imagesDir, localFileName);
+
+        var response = await client.GetAsync(imageUrl);
+        if (response.IsSuccessStatusCode)
+        {
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            await System.IO.File.WriteAllBytesAsync(localPath, bytes);
+            return localPath;
+        }
+        return null;
     }
 
     private async Task CreateDefaultTypesAsync()
@@ -372,6 +412,7 @@ public class TicketService : ITicketService
         decimal Prix,
         string? Couleur,
         string? Icone,
+        string? ImageUrl,
         int Ordre,
         bool Actif,
         Guid? HammamId

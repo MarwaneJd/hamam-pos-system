@@ -135,6 +135,55 @@ public class HexToBrushConverter : IValueConverter
 }
 
 /// <summary>
+/// Convertit un chemin d'image local en BitmapImage, retourne null si pas d'image
+/// </summary>
+public class ImagePathToSourceConverter : IValueConverter
+{
+    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+        {
+            try
+            {
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch { return null; }
+        }
+        return null;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Returns Visible if the local image path exists, Collapsed otherwise
+/// </summary>
+public class HasImageToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var hasImage = value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path);
+        var invert = parameter is string p && p == "Invert";
+        if (invert) hasImage = !hasImage;
+        return hasImage ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
 /// Convertit un nom d'icône en MaterialDesign PackIconKind
 /// </summary>
 public class IconNameToKindConverter : IValueConverter

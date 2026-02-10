@@ -62,6 +62,12 @@ public class LocalTypeTicket
     [MaxLength(50)]
     public string Icone { get; set; } = "User"; // Nom de l'icône (User, UserCheck, Baby, Droplets)
 
+    [MaxLength(500)]
+    public string? ImageUrl { get; set; } // URL de l'image sur le serveur
+
+    [MaxLength(500)]
+    public string? LocalImagePath { get; set; } // Chemin local de l'image téléchargée
+
     public int Ordre { get; set; }
 }
 
