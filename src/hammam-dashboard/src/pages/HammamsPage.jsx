@@ -22,6 +22,9 @@ import {
     Save,
     ToggleLeft,
     ToggleRight,
+    Lock,
+    Shield,
+    Delete,
 } from 'lucide-react'
 import LoadingSpinner from '../components/LoadingSpinner'
 
@@ -40,17 +43,23 @@ export default function HammamsPage() {
     // État pour le formulaire de création avec employés et types de tickets
     const [newEmployes, setNewEmployes] = useState([])
     const [newTypeTickets, setNewTypeTickets] = useState([])
-    
+
     // État pour le mode édition - données existantes
     const [existingEmployes, setExistingEmployes] = useState([])
     const [existingTypeTickets, setExistingTypeTickets] = useState([])
     const [loadingDetails, setLoadingDetails] = useState(false)
     const [showPasswords, setShowPasswords] = useState({})
-    
-    // État pour les modifications en cours
+
     const [editingProduct, setEditingProduct] = useState(null)
     const [editingEmploye, setEditingEmploye] = useState(null)
     const [savingItem, setSavingItem] = useState(null)
+
+    // État pour le modal PIN personnalisé
+    const [pinModal, setPinModal] = useState({ show: false, type: null, employe: null })
+    const [pinValue, setPinValue] = useState('')
+    const [pinError, setPinError] = useState('')
+    const [showPinValue, setShowPinValue] = useState(false)
+    const [pinLoading, setPinLoading] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -94,7 +103,7 @@ export default function HammamsPage() {
         setExistingTypeTickets([])
         setShowPasswords({})
         setShowModal(true)
-        
+
         // Charger les détails du hammam (employés et types de tickets)
         setLoadingDetails(true)
         try {
@@ -145,7 +154,7 @@ export default function HammamsPage() {
         try {
             await typeTicketsService.toggleStatus(product.id)
             // Mettre à jour l'état local
-            setExistingTypeTickets(prev => prev.map(p => 
+            setExistingTypeTickets(prev => prev.map(p =>
                 p.id === product.id ? { ...p, isActif: !p.isActif } : p
             ))
             toast.success(product.isActif ? 'Produit désactivé' : 'Produit activé')
@@ -158,7 +167,7 @@ export default function HammamsPage() {
 
     const deleteExistingProduct = async (product) => {
         if (!window.confirm(`Supprimer le produit "${product.nom}" ?`)) return
-        
+
         setSavingItem(`product-${product.id}`)
         try {
             await typeTicketsService.delete(product.id)
@@ -173,7 +182,7 @@ export default function HammamsPage() {
 
     const addNewProductToHammam = async () => {
         if (!selectedHammam?.id) return
-        
+
         const newProduct = {
             nom: 'Nouveau produit',
             prix: 10,
@@ -182,7 +191,7 @@ export default function HammamsPage() {
             ordre: existingTypeTickets.length + 1,
             hammamId: selectedHammam.id
         }
-        
+
         setSavingItem('new-product')
         try {
             const created = await typeTicketsService.create(newProduct)
@@ -217,30 +226,110 @@ export default function HammamsPage() {
         }
     }
 
-    const resetEmployePassword = async (employe) => {
-        const newPassword = window.prompt(`Nouveau mot de passe pour ${employe.username}:`)
-        if (!newPassword) return
-        
-        setSavingItem(`employe-${employe.id}`)
-        try {
-            await employesService.resetPassword(employe.id, newPassword)
-            // Mettre à jour le passwordClair dans l'état local
-            setExistingEmployes(prev => prev.map(e => 
-                e.id === employe.id ? { ...e, passwordClair: newPassword } : e
-            ))
-            toast.success('Mot de passe réinitialisé')
-        } catch (error) {
-            toast.error('Erreur lors de la réinitialisation')
-        } finally {
-            setSavingItem(null)
+    const resetEmployePassword = (employe) => {
+        setPinModal({ show: true, type: 'reset', employe })
+        setPinValue('')
+        setPinError('')
+        setShowPinValue(false)
+    }
+
+    const addNewEmployeToHammam = () => {
+        if (!selectedHammam?.id) return
+
+        // Max 2 employés par hammam
+        const activeCount = existingEmployes.filter(e => e.isActif).length
+        if (activeCount >= 2) {
+            toast.error('Maximum 2 employés par hammam')
+            return
         }
+
+        setPinModal({ show: true, type: 'create', employe: null })
+        setPinValue('')
+        setPinError('')
+        setShowPinValue(false)
+    }
+
+    const handlePinSubmit = async () => {
+        if (!pinValue) {
+            setPinError('Veuillez entrer un code PIN')
+            return
+        }
+        if (!/^\d+$/.test(pinValue)) {
+            setPinError('Le code PIN doit contenir uniquement des chiffres')
+            return
+        }
+        if (pinValue.length < 3) {
+            setPinError('Le code PIN doit contenir au moins 3 chiffres')
+            return
+        }
+
+        setPinLoading(true)
+        setPinError('')
+
+        try {
+            if (pinModal.type === 'reset') {
+                // Réinitialiser le mot de passe
+                const emp = pinModal.employe
+                setSavingItem(`employe-${emp.id}`)
+                await employesService.resetPassword(emp.id, pinValue)
+                setExistingEmployes(prev => prev.map(e =>
+                    e.id === emp.id ? { ...e, passwordClair: pinValue } : e
+                ))
+                toast.success('Code PIN réinitialisé avec succès')
+                setSavingItem(null)
+            } else if (pinModal.type === 'create') {
+                // Créer un nouvel employé
+                const activeCount = existingEmployes.filter(e => e.isActif).length
+                const newEmploye = {
+                    nom: '',
+                    prenom: `Employé ${activeCount + 1}`,
+                    password: pinValue,
+                    langue: 'FR',
+                    role: 'Employe',
+                    hammamId: selectedHammam.id
+                }
+
+                setSavingItem('new-employe')
+                const created = await employesService.create(newEmploye)
+                created.passwordClair = pinValue
+                setExistingEmployes(prev => [...prev, created])
+                setEditingEmploye(created.id)
+                toast.success('Nouvel employé ajouté')
+                setSavingItem(null)
+            }
+            setPinModal({ show: false, type: null, employe: null })
+        } catch (error) {
+            const msg = error.response?.data?.message || 'Erreur lors de l\'opération'
+            setPinError(msg)
+        } finally {
+            setPinLoading(false)
+        }
+    }
+
+    const handlePinKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            handlePinSubmit()
+        }
+    }
+
+    const handlePinDigitClick = (digit) => {
+        if (pinValue.length < 8) {
+            setPinValue(prev => prev + digit)
+            setPinError('')
+        }
+    }
+
+    const handlePinBackspace = () => {
+        setPinValue(prev => prev.slice(0, -1))
+        setPinError('')
     }
 
     const toggleEmployeStatus = async (employe) => {
         setSavingItem(`employe-${employe.id}`)
         try {
             await employesService.toggleStatus(employe.id)
-            setExistingEmployes(prev => prev.map(e => 
+            setExistingEmployes(prev => prev.map(e =>
                 e.id === employe.id ? { ...e, isActif: !e.isActif } : e
             ))
             toast.success(employe.isActif ? 'Employé désactivé' : 'Employé activé')
@@ -253,7 +342,7 @@ export default function HammamsPage() {
 
     const deleteExistingEmploye = async (employe) => {
         if (!window.confirm(`Supprimer l'employé "${employe.prenom} ${employe.nom}" ?`)) return
-        
+
         setSavingItem(`employe-${employe.id}`)
         try {
             await employesService.delete(employe.id)
@@ -266,48 +355,14 @@ export default function HammamsPage() {
         }
     }
 
-    const addNewEmployeToHammam = async () => {
-        if (!selectedHammam?.id) return
-        
-        const username = window.prompt('Nom d\'utilisateur:')
-        if (!username) return
-        
-        const password = window.prompt('Mot de passe:')
-        if (!password) return
-        
-        const newEmploye = {
-            nom: '',
-            prenom: username,
-            username: username,
-            password: password,
-            langue: 'FR',
-            role: 'Employe',
-            hammamId: selectedHammam.id
-        }
-        
-        setSavingItem('new-employe')
-        try {
-            const created = await employesService.create(newEmploye)
-            // Ajouter le passwordClair pour l'affichage
-            created.passwordClair = password
-            setExistingEmployes(prev => [...prev, created])
-            setEditingEmploye(created.id)
-            toast.success('Nouvel employé ajouté')
-        } catch (error) {
-            toast.error(error.response?.data?.message || 'Erreur lors de la création')
-        } finally {
-            setSavingItem(null)
-        }
-    }
-
     const updateExistingProductField = (productId, field, value) => {
-        setExistingTypeTickets(prev => prev.map(p => 
+        setExistingTypeTickets(prev => prev.map(p =>
             p.id === productId ? { ...p, [field]: value } : p
         ))
     }
 
     const updateExistingEmployeField = (employeId, field, value) => {
-        setExistingEmployes(prev => prev.map(e => 
+        setExistingEmployes(prev => prev.map(e =>
             e.id === employeId ? { ...e, [field]: value } : e
         ))
     }
@@ -376,13 +431,16 @@ export default function HammamsPage() {
 
     // Ajouter un employé au formulaire
     const addEmploye = () => {
+        if (newEmployes.length >= 2) {
+            toast.error('Maximum 2 employés par hammam')
+            return
+        }
         setNewEmployes([...newEmployes, {
             password: '',
             nom: '',
             prenom: '',
             langue: 'FR',
-            role: 'Employe',
-            icone: 'User1'
+            role: 'Employe'
         }])
     }
 
@@ -693,8 +751,8 @@ export default function HammamsPage() {
                                                     ) : (
                                                         // Mode affichage du produit
                                                         <div className="flex gap-2 items-center">
-                                                            <div 
-                                                                className="w-4 h-4 rounded-full flex-shrink-0" 
+                                                            <div
+                                                                className="w-4 h-4 rounded-full flex-shrink-0"
                                                                 style={{ backgroundColor: type.couleur || '#3B82F6' }}
                                                             />
                                                             <span className="flex-1 text-white font-medium">{type.nom}</span>
@@ -706,7 +764,7 @@ export default function HammamsPage() {
                                                                 className={`p-1 rounded transition-colors ${type.isActif ? 'text-success-400 hover:text-success-300' : 'text-slate-500 hover:text-slate-400'}`}
                                                                 title={type.isActif ? 'Désactiver' : 'Activer'}
                                                             >
-                                                                {savingItem === `product-${type.id}` ? <Loader2 className="w-5 h-5 animate-spin" /> : 
+                                                                {savingItem === `product-${type.id}` ? <Loader2 className="w-5 h-5 animate-spin" /> :
                                                                     type.isActif ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
                                                             </button>
                                                             <button
@@ -746,8 +804,8 @@ export default function HammamsPage() {
                                         <button
                                             type="button"
                                             onClick={addNewEmployeToHammam}
-                                            disabled={savingItem === 'new-employe'}
-                                            className="text-sm text-primary-400 hover:text-primary-300 flex items-center gap-1"
+                                            disabled={savingItem === 'new-employe' || existingEmployes.filter(e => e.isActif).length >= 2}
+                                            className="text-sm text-primary-400 hover:text-primary-300 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {savingItem === 'new-employe' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                                             Ajouter un employé
@@ -791,8 +849,6 @@ export default function HammamsPage() {
                                                                 >
                                                                     <option value="User1">🔵 Icône 1 (Bleu)</option>
                                                                     <option value="User2">🟢 Icône 2 (Vert)</option>
-                                                                    <option value="User3">🟠 Icône 3 (Orange)</option>
-                                                                    <option value="User4">🟣 Icône 4 (Violet)</option>
                                                                 </select>
                                                                 <select
                                                                     value={emp.langue || 'FR'}
@@ -840,7 +896,7 @@ export default function HammamsPage() {
                                                                         className={`p-1 rounded transition-colors ${emp.isActif ? 'text-success-400 hover:text-success-300' : 'text-slate-500 hover:text-slate-400'}`}
                                                                         title={emp.isActif ? 'Désactiver' : 'Activer'}
                                                                     >
-                                                                        {savingItem === `employe-${emp.id}` ? <Loader2 className="w-5 h-5 animate-spin" /> : 
+                                                                        {savingItem === `employe-${emp.id}` ? <Loader2 className="w-5 h-5 animate-spin" /> :
                                                                             emp.isActif ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
                                                                     </button>
                                                                     <button
@@ -970,9 +1026,10 @@ export default function HammamsPage() {
                                         <button
                                             type="button"
                                             onClick={addEmploye}
-                                            className="text-sm text-primary-400 hover:text-primary-300"
+                                            disabled={newEmployes.length >= 2}
+                                            className="text-sm text-primary-400 hover:text-primary-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            + Ajouter un employé
+                                            + Ajouter un employé (max 2)
                                         </button>
                                     </div>
                                     <div className="space-y-3">
@@ -1004,25 +1061,20 @@ export default function HammamsPage() {
                                                         placeholder="Prénom"
                                                     />
                                                     <input
-                                                        type="password"
+                                                        type="tel"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
                                                         value={emp.password}
-                                                        onChange={(e) => updateEmploye(index, 'password', e.target.value)}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/\D/g, '')
+                                                            updateEmploye(index, 'password', val)
+                                                        }}
                                                         className="input-field"
-                                                        placeholder="Mot de passe"
+                                                        placeholder="Code PIN (chiffres)"
                                                     />
-                                                    <select
-                                                        value={emp.icone || 'User1'}
-                                                        onChange={(e) => updateEmploye(index, 'icone', e.target.value)}
-                                                        className="input-field"
-                                                    >
-                                                        <option value="User1">🔵 Icône 1 (Bleu)</option>
-                                                        <option value="User2">🟢 Icône 2 (Vert)</option>
-                                                        <option value="User3">🟠 Icône 3 (Orange)</option>
-                                                        <option value="User4">🟣 Icône 4 (Violet)</option>
-                                                    </select>
                                                 </div>
                                                 <p className="text-xs text-slate-500">
-                                                    Nom d'utilisateur généré automatiquement
+                                                    Icône et nom d'utilisateur assignés automatiquement
                                                 </p>
                                             </div>
                                         ))}
@@ -1043,6 +1095,147 @@ export default function HammamsPage() {
                             <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2">
                                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Enregistrer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal PIN personnalisé */}
+            {pinModal.show && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] animate-fadeIn">
+                    <div className="bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl shadow-2xl border border-slate-700/50 w-full max-w-sm mx-4 overflow-hidden">
+                        {/* Header */}
+                        <div className="px-6 pt-6 pb-4 text-center">
+                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-primary-500/20 to-accent-500/20 border border-primary-500/30 flex items-center justify-center">
+                                {pinModal.type === 'reset' ? (
+                                    <Key className="w-8 h-8 text-primary-400" />
+                                ) : (
+                                    <Shield className="w-8 h-8 text-accent-400" />
+                                )}
+                            </div>
+                            <h3 className="text-xl font-semibold text-white mb-1">
+                                {pinModal.type === 'reset' ? 'Changer le code PIN' : 'Code PIN du nouvel employé'}
+                            </h3>
+                            {pinModal.type === 'reset' && pinModal.employe && (
+                                <p className="text-sm text-slate-400">
+                                    {pinModal.employe.username}
+                                </p>
+                            )}
+                            <p className="text-xs text-slate-500 mt-2">
+                                Entrez un code numérique unique (min 3 chiffres)
+                            </p>
+                        </div>
+
+                        {/* PIN Display */}
+                        <div className="px-6 pb-4">
+                            <div className="relative">
+                                <div
+                                    className="w-full bg-slate-950/50 border-2 rounded-xl px-4 py-4 text-center font-mono tracking-[0.5em] text-2xl transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500/50"
+                                    style={{
+                                        borderColor: pinError ? '#ef4444' : pinValue ? '#3b82f6' : '#334155'
+                                    }}
+                                >
+                                    {pinValue ? (
+                                        <span className="text-white">
+                                            {showPinValue ? pinValue : '●'.repeat(pinValue.length)}
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-600">• • • •</span>
+                                    )}
+                                    <input
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        value={pinValue}
+                                        onChange={(e) => {
+                                            const val = e.target.value.replace(/\D/g, '').slice(0, 8)
+                                            setPinValue(val)
+                                            setPinError('')
+                                        }}
+                                        onKeyDown={handlePinKeyDown}
+                                        autoFocus
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPinValue(!showPinValue)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-700/50"
+                                >
+                                    {showPinValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                            </div>
+
+                            {/* Error message */}
+                            {pinError && (
+                                <div className="mt-3 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                    <p className="text-red-400 text-sm text-center">{pinError}</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Numeric Keypad */}
+                        <div className="px-6 pb-4">
+                            <div className="grid grid-cols-3 gap-2">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(digit => (
+                                    <button
+                                        key={digit}
+                                        type="button"
+                                        onClick={() => handlePinDigitClick(String(digit))}
+                                        className="h-14 rounded-xl bg-slate-700/50 hover:bg-slate-600/70 active:bg-slate-500/70 text-white text-xl font-semibold transition-all duration-150 active:scale-95 border border-slate-600/30 hover:border-slate-500/50"
+                                    >
+                                        {digit}
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => { setPinValue(''); setPinError('') }}
+                                    className="h-14 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all duration-150 active:scale-95 border border-slate-700/30"
+                                >
+                                    Effacer
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handlePinDigitClick('0')}
+                                    className="h-14 rounded-xl bg-slate-700/50 hover:bg-slate-600/70 active:bg-slate-500/70 text-white text-xl font-semibold transition-all duration-150 active:scale-95 border border-slate-600/30 hover:border-slate-500/50"
+                                >
+                                    0
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handlePinBackspace}
+                                    className="h-14 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all duration-150 active:scale-95 border border-slate-700/30 flex items-center justify-center"
+                                >
+                                    <Delete className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="px-6 pb-6 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setPinModal({ show: false, type: null, employe: null })}
+                                disabled={pinLoading}
+                                className="flex-1 py-3 rounded-xl bg-slate-700/50 hover:bg-slate-600/70 text-slate-300 font-medium transition-all duration-200 border border-slate-600/30"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handlePinSubmit}
+                                disabled={pinLoading || !pinValue || pinValue.length < 3}
+                                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white font-semibold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-primary-500/20"
+                            >
+                                {pinLoading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    <>
+                                        <Lock className="w-4 h-4" />
+                                        Confirmer
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>

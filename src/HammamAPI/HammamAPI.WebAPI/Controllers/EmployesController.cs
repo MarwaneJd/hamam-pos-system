@@ -119,16 +119,33 @@ public class EmployesController : ControllerBase
 
     /// <summary>
     /// Crée un nouvel employé avec username auto-généré (Utilisateur1 ou Utilisateur2 par hammam)
+    /// Maximum 2 employés par hammam. Mot de passe numérique uniquement.
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<EmployeListDto>> Create([FromBody] CreateEmployeDto dto)
     {
+        // Valider que le mot de passe est numérique uniquement
+        if (string.IsNullOrEmpty(dto.Password) || !dto.Password.All(char.IsDigit))
+            return BadRequest(new { message = "Le mot de passe doit contenir uniquement des chiffres" });
+
         // Compter les employés de CE hammam uniquement (hors Admin)
         var hammamEmployes = await _employeRepository.GetByHammamIdAsync(dto.HammamId);
-        var employeCount = hammamEmployes.Count(e => e.Role != EmployeRole.Admin);
+        var activeNonAdmin = hammamEmployes.Where(e => e.Role != EmployeRole.Admin && e.Actif).ToList();
+        var employeCount = activeNonAdmin.Count;
         
+        // Maximum 2 employés par hammam
+        if (employeCount >= 2)
+            return BadRequest(new { message = "Maximum 2 employés par hammam atteint" });
+
         // Générer Utilisateur1 ou Utilisateur2 selon le nombre d'employés dans ce hammam
         var newUsername = $"Utilisateur{employeCount + 1}";
+
+        // Vérifier que le mot de passe est unique parmi les employés avec le même username
+        var sameUsernameEmployes = await _employeRepository.GetAllByUsernameAsync(newUsername);
+        if (sameUsernameEmployes.Any(e => e.Actif && e.PasswordClair == dto.Password))
+            return BadRequest(new { message = "Ce code PIN est déjà utilisé par un autre employé. Veuillez en choisir un différent." });
+        // Auto-assign icon: User1 (Blue) or User2 (Green)
+        var autoIcone = employeCount == 0 ? "User1" : "User2";
 
         var employe = new Employe
         {
@@ -143,7 +160,7 @@ public class EmployesController : ControllerBase
             Langue = dto.Langue ?? "FR",
             Actif = true,
             CreatedAt = DateTime.UtcNow,
-            Icone = dto.Icone ?? "User1"
+            Icone = autoIcone
         };
 
         await _employeRepository.AddAsync(employe);
@@ -228,9 +245,18 @@ public class EmployesController : ControllerBase
     [HttpPatch("{id}/reset-password")]
     public async Task<ActionResult> ResetPassword(Guid id, [FromBody] ResetPasswordDto dto)
     {
+        // Valider que le mot de passe est numérique uniquement
+        if (string.IsNullOrEmpty(dto.NewPassword) || !dto.NewPassword.All(char.IsDigit))
+            return BadRequest(new { message = "Le mot de passe doit contenir uniquement des chiffres" });
+
         var employe = await _employeRepository.GetByIdAsync(id);
         if (employe == null)
             return NotFound(new { message = "Employé non trouvé" });
+
+        // Vérifier que le mot de passe est unique parmi les employés avec le même username
+        var sameUsernameEmployes = await _employeRepository.GetAllByUsernameAsync(employe.Username);
+        if (sameUsernameEmployes.Any(e => e.Actif && e.Id != id && e.PasswordClair == dto.NewPassword))
+            return BadRequest(new { message = "Ce code PIN est déjà utilisé par un autre employé. Veuillez en choisir un différent." });
 
         employe.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
         employe.PasswordClair = dto.NewPassword; // Sauvegarder le mot de passe en clair pour affichage admin
@@ -285,7 +311,7 @@ public class CreateEmployeDto
     public Guid HammamId { get; set; }
     public string Role { get; set; } = "Employe";
     public string? Langue { get; set; }
-    public string? Icone { get; set; } // User1, User2, User3, User4
+    public string? Icone { get; set; } // User1 (Blue), User2 (Green) — auto-assigned
 }
 
 public class UpdateEmployeDto
@@ -295,7 +321,7 @@ public class UpdateEmployeDto
     public Guid? HammamId { get; set; }
     public string? Role { get; set; }
     public string? Langue { get; set; }
-    public string? Icone { get; set; } // User1, User2, User3, User4
+    public string? Icone { get; set; } // User1 (Blue), User2 (Green)
 }
 
 public class ResetPasswordDto

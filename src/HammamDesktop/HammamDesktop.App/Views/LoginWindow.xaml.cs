@@ -103,13 +103,11 @@ public partial class LoginWindow : Window
 
     private Border CreateProfileCard(EmployeProfile profile)
     {
-        // Couleur basée sur l'icône
+        // Couleur basée sur l'icône (2 couleurs uniquement)
         var color = profile.Icone switch
         {
             "User1" => "#3B82F6", // Bleu
             "User2" => "#10B981", // Vert
-            "User3" => "#F59E0B", // Orange
-            "User4" => "#8B5CF6", // Violet
             _ => "#3B82F6"
         };
 
@@ -117,8 +115,6 @@ public partial class LoginWindow : Window
         {
             "User1" => PackIconKind.Account,
             "User2" => PackIconKind.AccountCircle,
-            "User3" => PackIconKind.AccountBox,
-            "User4" => PackIconKind.AccountStar,
             _ => PackIconKind.Account
         };
 

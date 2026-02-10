@@ -159,14 +159,29 @@ public class HammamsController : ControllerBase
                 }
             }
 
-            // Créer les employés si fournis (Utilisateur1, Utilisateur2, etc. pour CE hammam)
+            // Créer les employés si fournis (max 2 par hammam: Utilisateur1, Utilisateur2)
             if (dto.Employes != null && dto.Employes.Any())
             {
-                var counter = 1; // Commencer à 1 pour chaque nouveau hammam
+                var employesToCreate = dto.Employes.Take(2).ToList(); // Max 2 employés
+                var counter = 1;
+                var icones = new[] { "User1", "User2" }; // Blue, Green
 
-                foreach (var empDto in dto.Employes)
+                foreach (var empDto in employesToCreate)
                 {
+                    // Valider mot de passe numérique
+                    if (string.IsNullOrEmpty(empDto.Password) || !empDto.Password.All(char.IsDigit))
+                    {
+                        return BadRequest(new { message = $"Le mot de passe de l'employé {counter} doit contenir uniquement des chiffres" });
+                    }
+
                     var newUsername = $"Utilisateur{counter}";
+
+                    // Vérifier que le mot de passe est unique parmi les employés avec le même username
+                    var sameUsernameEmployes = await _employeRepository.GetAllByUsernameAsync(newUsername);
+                    if (sameUsernameEmployes.Any(e => e.Actif && e.PasswordClair == empDto.Password))
+                    {
+                        return BadRequest(new { message = $"Le code PIN de l'employé {counter} est déjà utilisé par un autre employé. Veuillez en choisir un différent." });
+                    }
                     
                     var employe = new Employe
                     {
@@ -179,7 +194,7 @@ public class HammamsController : ControllerBase
                         HammamId = hammam.Id,
                         Langue = empDto.Langue ?? "FR",
                         Role = Enum.Parse<EmployeRole>(empDto.Role ?? "Employe"),
-                        Icone = empDto.Icone ?? "User1",
+                        Icone = icones[counter - 1], // Auto-assign: User1 or User2
                         Actif = true,
                         CreatedAt = DateTime.UtcNow
                     };
@@ -343,7 +358,7 @@ public class CreateHammamEmployeDto
     public string Prenom { get; set; } = "";
     public string? Langue { get; set; }
     public string? Role { get; set; }
-    public string? Icone { get; set; } // User1, User2, User3, User4
+    public string? Icone { get; set; } // User1 (Blue), User2 (Green) — auto-assigned
 }
 
 public class UpdateHammamDto
