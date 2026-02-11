@@ -21,7 +21,7 @@ public interface ITicketService
 {
     Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync();
     Task CreateTicketAsync(LocalTicket ticket);
-    Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid employeId);
+    Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId);
     Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
     Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
 }
@@ -274,14 +274,41 @@ public class TicketService : ITicketService
                 var apiTypes = await response.Content.ReadFromJsonAsync<List<ApiTypeTicket>>();
                 
                 if (apiTypes != null && apiTypes.Any())
+            {
+                // Utiliser UPSERT (AddOrUpdate) au lieu de supprimer puis ajouter
+                foreach (var apiType in apiTypes)
                 {
-                    // Supprimer les anciens types
-                    var oldTypes = await _db.TypeTickets.ToListAsync();
-                    _db.TypeTickets.RemoveRange(oldTypes);
+                    // Chercher si le type existe déjà
+                    var existingType = await _db.TypeTickets.FindAsync(apiType.Id);
                     
-                    // Ajouter les nouveaux types
-                    foreach (var apiType in apiTypes)
+                    if (existingType != null)
                     {
+                        // Mettre à jour le type existant
+                        existingType.Nom = apiType.Nom;
+                        existingType.Prix = apiType.Prix;
+                        existingType.Couleur = apiType.Couleur ?? "#3B82F6";
+                        existingType.Icone = apiType.Icone ?? "User";
+                        existingType.ImageUrl = apiType.ImageUrl;
+                        existingType.Ordre = apiType.Ordre;
+                        
+                        // Download product image locally for offline use
+                        if (!string.IsNullOrEmpty(apiType.ImageUrl))
+                        {
+                            try
+                            {
+                                var localPath = await DownloadProductImageAsync(client, apiType.ImageUrl, apiType.Id);
+                                if (localPath != null)
+                                    existingType.LocalImagePath = localPath;
+                            }
+                            catch (Exception imgEx)
+                            {
+                                Serilog.Log.Warning(imgEx, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Créer un nouveau type
                         var localType = new LocalTypeTicket
                         {
                             Id = apiType.Id,
@@ -310,10 +337,11 @@ public class TicketService : ITicketService
 
                         _db.TypeTickets.Add(localType);
                     }
-                    
-                    await _db.SaveChangesAsync();
-                    Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", apiTypes.Count);
                 }
+                
+                await _db.SaveChangesAsync();
+                Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", apiTypes.Count);
+            }
             }
             _typesSynced = true;
         }
@@ -336,7 +364,10 @@ public class TicketService : ITicketService
         var localFileName = $"{typeId}{ext}";
         var localPath = System.IO.Path.Combine(imagesDir, localFileName);
 
-        var response = await client.GetAsync(imageUrl);
+        // Construire l'URL complète si c'est un chemin relatif
+        var fullUrl = imageUrl.StartsWith("http") ? imageUrl : $"{client.BaseAddress}{imageUrl.TrimStart('/')}";
+        
+        var response = await client.GetAsync(fullUrl);
         if (response.IsSuccessStatusCode)
         {
             var bytes = await response.Content.ReadAsByteArrayAsync();
@@ -367,13 +398,13 @@ public class TicketService : ITicketService
         await _db.SaveChangesAsync();
     }
 
-    public async Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid employeId)
+    public async Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId)
     {
         var today = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
 
         var tickets = await _db.Tickets
-            .Where(t => t.EmployeId == employeId && 
+            .Where(t => t.HammamId == hammamId && 
                         t.CreatedAt >= today && 
                         t.CreatedAt < tomorrow)
             .ToListAsync();

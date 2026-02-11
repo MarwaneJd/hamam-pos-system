@@ -188,6 +188,13 @@ public partial class SalesViewModel : ObservableObject
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la vente du ticket");
+            
+            // Afficher l'erreur à l'utilisateur pour déboguer
+            System.Windows.MessageBox.Show(
+                $"Erreur lors de la vente du ticket:\n\n{ex.Message}\n\nDétails: {ex.InnerException?.Message}",
+                "Erreur",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
         }
     }
 
@@ -258,7 +265,8 @@ public partial class SalesViewModel : ObservableObject
         var session = await _authService.GetCurrentSessionAsync();
         if (session == null) return;
 
-        var stats = await _ticketService.GetTodayStatsAsync(session.EmployeId);
+        // Compter les tickets du HAMMAM (pas juste de l'employé) pour partager le compteur
+        var stats = await _ticketService.GetTodayStatsAsync(session.HammamId);
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
         NextTicketNumber = _hammamPrefixeTicket + TodayTicketsCount + 1;

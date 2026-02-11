@@ -61,7 +61,8 @@ public partial class App : Application
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
         
         services.AddDbContext<LocalDbContext>(options =>
-            options.UseSqlite($"Data Source={dbPath}"));
+            options.UseSqlite($"Data Source={dbPath}"),
+            ServiceLifetime.Singleton); // Singleton pour éviter les problèmes avec les services Singleton
 
         // Services
         services.AddSingleton<IAuthService, AuthService>();

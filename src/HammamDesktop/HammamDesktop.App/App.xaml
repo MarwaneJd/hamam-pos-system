@@ -6,16 +6,16 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <!-- Material Design -->
-                <materialDesign:BundledTheme BaseTheme="Light" PrimaryColor="Blue" SecondaryColor="Purple" />
+                <materialDesign:BundledTheme BaseTheme="Dark" PrimaryColor="Blue" SecondaryColor="Purple" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml" />
             </ResourceDictionary.MergedDictionaries>
             
-            <!-- Couleurs personnalisées - Thème Clair -->
-            <SolidColorBrush x:Key="BackgroundDark" Color="#FFFFFF"/>
-            <SolidColorBrush x:Key="CardBackground" Color="#F8FAFC"/>
-            <SolidColorBrush x:Key="BorderColor" Color="#E2E8F0"/>
-            <SolidColorBrush x:Key="TextPrimary" Color="#1E293B"/>
-            <SolidColorBrush x:Key="TextSecondary" Color="#64748B"/>
+            <!-- Couleurs personnalisées - Thème Sombre -->
+            <SolidColorBrush x:Key="BackgroundDark" Color="#0F172A"/>
+            <SolidColorBrush x:Key="CardBackground" Color="#1E293B"/>
+            <SolidColorBrush x:Key="BorderColor" Color="#334155"/>
+            <SolidColorBrush x:Key="TextPrimary" Color="#F1F5F9"/>
+            <SolidColorBrush x:Key="TextSecondary" Color="#94A3B8"/>
             
             <SolidColorBrush x:Key="HommeColor" Color="#3B82F6"/>
             <SolidColorBrush x:Key="FemmeColor" Color="#EC4899"/>

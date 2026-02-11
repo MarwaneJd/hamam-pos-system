@@ -373,8 +373,13 @@ export const typeTicketsService = {
     uploadImage: async (id, file) => {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await api.post(`/typetickets/${id}/upload-image`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+
+        const token = localStorage.getItem('token')
+        const response = await axios.post(`/api/typetickets/${id}/upload-image`, formData, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+                // Ne PAS définir Content-Type - le navigateur l'ajoutera automatiquement avec boundary
+            }
         })
         return response.data
     },
