@@ -30,8 +30,8 @@ WORKDIR /app
 # Create non-root user
 RUN adduser --disabled-password --gecos "" appuser
 
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+# Create logs and uploads directories
+RUN mkdir -p /app/logs /app/uploads && chown -R appuser:appuser /app/logs /app/uploads
 
 COPY --from=build /app/publish .
 
