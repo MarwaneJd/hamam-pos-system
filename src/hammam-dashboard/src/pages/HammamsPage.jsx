@@ -907,14 +907,6 @@ export default function HammamsPage() {
                                                                     placeholder="Nom"
                                                                 />
                                                                 <select
-                                                                    value={emp.icone || 'User1'}
-                                                                    onChange={(e) => updateExistingEmployeField(emp.id, 'icone', e.target.value)}
-                                                                    className="input-field"
-                                                                >
-                                                                    <option value="User1">🔵 Icône 1 (Bleu)</option>
-                                                                    <option value="User2">🟢 Icône 2 (Vert)</option>
-                                                                </select>
-                                                                <select
                                                                     value={emp.langue || 'FR'}
                                                                     onChange={(e) => updateExistingEmployeField(emp.id, 'langue', e.target.value)}
                                                                     className="input-field"
@@ -922,6 +914,9 @@ export default function HammamsPage() {
                                                                     <option value="FR">Français</option>
                                                                     <option value="AR">العربية</option>
                                                                 </select>
+                                                                <div className="input-field bg-slate-800/30 flex items-center text-slate-400 text-sm cursor-default">
+                                                                    {emp.icone === 'User2' ? '🟢 Vert' : '🔵 Bleu'} (auto)
+                                                                </div>
                                                             </div>
                                                             <p className="text-xs text-slate-500">
                                                                 Utilisateur: {emp.username}

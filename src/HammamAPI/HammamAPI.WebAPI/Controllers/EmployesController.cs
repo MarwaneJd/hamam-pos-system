@@ -196,7 +196,7 @@ public class EmployesController : ControllerBase
         employe.Prenom = dto.Prenom ?? employe.Prenom;
         employe.HammamId = dto.HammamId ?? employe.HammamId;
         employe.Langue = dto.Langue ?? employe.Langue;
-        employe.Icone = dto.Icone ?? employe.Icone;
+        // Icone is auto-assigned at creation (User1=Blue, User2=Green) and cannot be changed
         employe.UpdatedAt = DateTime.UtcNow;
         
         if (!string.IsNullOrEmpty(dto.Role))
@@ -324,7 +324,7 @@ public class UpdateEmployeDto
     public Guid? HammamId { get; set; }
     public string? Role { get; set; }
     public string? Langue { get; set; }
-    public string? Icone { get; set; } // User1 (Blue), User2 (Green)
+    // Icone is auto-assigned at creation and cannot be changed via update
 }
 
 public class ResetPasswordDto
