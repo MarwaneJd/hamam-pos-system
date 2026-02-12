@@ -42,6 +42,8 @@ services:
       JwtSettings__Audience: HammamClients
       CorsSettings__AllowedOrigins: ${CORS_ORIGINS}
       UseInMemoryDatabase: "false"
+    ports:
+      - "8080:8080"
     volumes:
       - api_logs:/app/logs
     healthcheck:

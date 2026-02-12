@@ -65,3 +65,8 @@ publish/
 # Secrets
 appsettings.Development.json
 appsettings.Production.json
+
+# Gros binaires du ClientPackage
+src/HammamDesktop/HammamDesktop.App/ClientPackage/HammamPOS.exe
+src/HammamDesktop/HammamDesktop.App/ClientPackage/HammamPOS.pdb
+src/HammamDesktop/HammamDesktop.App/publish/
