@@ -274,42 +274,46 @@ public class TicketService : ITicketService
                 var apiTypes = await response.Content.ReadFromJsonAsync<List<ApiTypeTicket>>();
                 
                 if (apiTypes != null && apiTypes.Any())
-            {
-                // Utiliser UPSERT (AddOrUpdate) au lieu de supprimer puis ajouter
-                foreach (var apiType in apiTypes)
                 {
-                    // Chercher si le type existe déjà
-                    var existingType = await _db.TypeTickets.FindAsync(apiType.Id);
+                    // Supprimer les anciens types
+                    var oldTypes = await _db.TypeTickets.ToListAsync();
+                    _db.TypeTickets.RemoveRange(oldTypes);
                     
-                    if (existingType != null)
+                    // Dossier pour cache des images
+                    var imageDir = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "HammamPOS", "images", "typetickets");
+                    System.IO.Directory.CreateDirectory(imageDir);
+
+                    // Ajouter les nouveaux types
+                    foreach (var apiType in apiTypes)
                     {
-                        // Mettre à jour le type existant
-                        existingType.Nom = apiType.Nom;
-                        existingType.Prix = apiType.Prix;
-                        existingType.Couleur = apiType.Couleur ?? "#3B82F6";
-                        existingType.Icone = apiType.Icone ?? "User";
-                        existingType.ImageUrl = apiType.ImageUrl;
-                        existingType.Ordre = apiType.Ordre;
-                        
-                        // Download product image locally for offline use
+                        string? localImagePath = null;
+
+                        // Télécharger l'image si elle existe
                         if (!string.IsNullOrEmpty(apiType.ImageUrl))
                         {
                             try
                             {
-                                var localPath = await DownloadProductImageAsync(client, apiType.ImageUrl, apiType.Id);
-                                if (localPath != null)
-                                    existingType.LocalImagePath = localPath;
+                                var imageResponse = await client.GetAsync(apiType.ImageUrl);
+                                if (imageResponse.IsSuccessStatusCode)
+                                {
+                                    var ext = System.IO.Path.GetExtension(new Uri(apiType.ImageUrl).AbsolutePath);
+                                    if (string.IsNullOrEmpty(ext)) ext = ".png";
+                                    var fileName = $"{apiType.Id}{ext}";
+                                    localImagePath = System.IO.Path.Combine(imageDir, fileName);
+                                    
+                                    var imageBytes = await imageResponse.Content.ReadAsByteArrayAsync();
+                                    await System.IO.File.WriteAllBytesAsync(localImagePath, imageBytes);
+                                }
                             }
                             catch (Exception imgEx)
                             {
                                 Serilog.Log.Warning(imgEx, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
                             }
                         }
-                    }
-                    else
-                    {
-                        // Créer un nouveau type
-                        var localType = new LocalTypeTicket
+
+                        _db.TypeTickets.Add(new LocalTypeTicket
                         {
                             Id = apiType.Id,
                             Nom = apiType.Nom,
@@ -317,31 +321,14 @@ public class TicketService : ITicketService
                             Couleur = apiType.Couleur ?? "#3B82F6",
                             Icone = apiType.Icone ?? "User",
                             ImageUrl = apiType.ImageUrl,
+                            LocalImagePath = localImagePath,
                             Ordre = apiType.Ordre
-                        };
-
-                        // Download product image locally for offline use
-                        if (!string.IsNullOrEmpty(apiType.ImageUrl))
-                        {
-                            try
-                            {
-                                var localPath = await DownloadProductImageAsync(client, apiType.ImageUrl, apiType.Id);
-                                if (localPath != null)
-                                    localType.LocalImagePath = localPath;
-                            }
-                            catch (Exception imgEx)
-                            {
-                                Serilog.Log.Warning(imgEx, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
-                            }
-                        }
-
-                        _db.TypeTickets.Add(localType);
+                        });
                     }
+                    
+                    await _db.SaveChangesAsync();
+                    Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", apiTypes.Count);
                 }
-                
-                await _db.SaveChangesAsync();
-                Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", apiTypes.Count);
-            }
             }
             _typesSynced = true;
         }
@@ -350,31 +337,6 @@ public class TicketService : ITicketService
             Serilog.Log.Error(ex, "Erreur lors de la synchronisation des types de tickets");
             _typesSynced = true; // Marquer comme tenté pour éviter les boucles
         }
-    }
-
-    private static async Task<string?> DownloadProductImageAsync(HttpClient client, string imageUrl, Guid typeId)
-    {
-        var imagesDir = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "HammamDesktop", "images", "products");
-        System.IO.Directory.CreateDirectory(imagesDir);
-
-        var ext = System.IO.Path.GetExtension(imageUrl).Split('?')[0]; // strip query params
-        if (string.IsNullOrEmpty(ext)) ext = ".png";
-        var localFileName = $"{typeId}{ext}";
-        var localPath = System.IO.Path.Combine(imagesDir, localFileName);
-
-        // Construire l'URL complète si c'est un chemin relatif
-        var fullUrl = imageUrl.StartsWith("http") ? imageUrl : $"{client.BaseAddress}{imageUrl.TrimStart('/')}";
-        
-        var response = await client.GetAsync(fullUrl);
-        if (response.IsSuccessStatusCode)
-        {
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            await System.IO.File.WriteAllBytesAsync(localPath, bytes);
-            return localPath;
-        }
-        return null;
     }
 
     private async Task CreateDefaultTypesAsync()

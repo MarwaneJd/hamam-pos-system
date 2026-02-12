@@ -12,13 +12,6 @@
     <Company>Hammam System</Company>
     <Product>Hammam Point de Vente</Product>
     <Description>Application de point de vente pour les Hammams</Description>
-    
-    <!-- Publishing Configuration -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>

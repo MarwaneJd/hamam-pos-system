@@ -243,13 +243,6 @@ public partial class LoginWindow : Window
                 ErrorText.Text = _viewModel.ErrorMessage;
                 ErrorText.Visibility = Visibility.Visible;
             }
-            else
-            {
-                // Connexion réussie, ouvrir la fenêtre principale
-                var mainWindow = App.GetService<MainWindow>();
-                mainWindow.Show();
-                Close();
-            }
         }
         catch (Exception ex)
         {

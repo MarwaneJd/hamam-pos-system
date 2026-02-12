@@ -65,7 +65,6 @@ public class HammamsController : ControllerBase
                 Prix = t.Prix,
                 Couleur = t.Couleur,
                 Icone = t.Icone,
-                ImageUrl = t.ImageUrl,
                 Ordre = t.Ordre
             }).ToList(),
             DateCreation = h.CreatedAt
@@ -110,7 +109,6 @@ public class HammamsController : ControllerBase
                 Prix = t.Prix,
                 Couleur = t.Couleur,
                 Icone = t.Icone,
-                ImageUrl = t.ImageUrl,
                 Ordre = t.Ordre
             }).ToList(),
             DateCreation = hammam.CreatedAt
@@ -330,7 +328,6 @@ public class HammamTypeTicketDto
     public decimal Prix { get; set; }
     public string Couleur { get; set; } = "#3B82F6";
     public string Icone { get; set; } = "User";
-    public string? ImageUrl { get; set; }
     public int Ordre { get; set; }
 }
 

@@ -187,7 +187,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowAll");
 
-// Serve uploaded product images
+// Servir les fichiers statiques (uploads d'images)
 var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
 Directory.CreateDirectory(uploadsPath);
 app.UseStaticFiles(new StaticFileOptions

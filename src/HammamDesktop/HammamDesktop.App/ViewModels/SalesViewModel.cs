@@ -103,7 +103,6 @@ public partial class SalesViewModel : ObservableObject
                 Prix = type.Prix,
                 Couleur = type.Couleur,
                 Icone = type.Icone ?? "User",
-                ImageUrl = type.ImageUrl,
                 LocalImagePath = type.LocalImagePath
             });
         }
@@ -188,13 +187,6 @@ public partial class SalesViewModel : ObservableObject
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la vente du ticket");
-            
-            // Afficher l'erreur à l'utilisateur pour déboguer
-            System.Windows.MessageBox.Show(
-                $"Erreur lors de la vente du ticket:\n\n{ex.Message}\n\nDétails: {ex.InnerException?.Message}",
-                "Erreur",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Error);
         }
     }
 
@@ -265,7 +257,6 @@ public partial class SalesViewModel : ObservableObject
         var session = await _authService.GetCurrentSessionAsync();
         if (session == null) return;
 
-        // Compter les tickets du HAMMAM (pas juste de l'employé) pour partager le compteur
         var stats = await _ticketService.GetTodayStatsAsync(session.HammamId);
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
@@ -292,7 +283,6 @@ public partial class TicketTypeViewModel : ObservableObject
     public decimal Prix { get; set; }
     public string Couleur { get; set; } = "#3B82F6";
     public string Icone { get; set; } = "User"; // Nom de l'icône (User, UserCheck, Baby, Droplets)
-    public string? ImageUrl { get; set; }
-    public string? LocalImagePath { get; set; }
+    public string? LocalImagePath { get; set; } // Chemin local de l'image cachée
     public bool HasImage => !string.IsNullOrEmpty(LocalImagePath) && System.IO.File.Exists(LocalImagePath);
 }

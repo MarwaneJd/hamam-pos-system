@@ -44,7 +44,6 @@ services:
       UseInMemoryDatabase: "false"
     volumes:
       - api_logs:/app/logs
-      - api_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -64,12 +63,10 @@ services:
     depends_on:
       - api
     ports:
-      - "3000:80"
+      - "80:80"
 
 volumes:
   postgres_data:
     driver: local
   api_logs:
-    driver: local
-  api_uploads:
     driver: local

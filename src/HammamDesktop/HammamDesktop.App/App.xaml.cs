@@ -61,8 +61,7 @@ public partial class App : Application
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
         
         services.AddDbContext<LocalDbContext>(options =>
-            options.UseSqlite($"Data Source={dbPath}"),
-            ServiceLifetime.Singleton); // Singleton pour éviter les problèmes avec les services Singleton
+            options.UseSqlite($"Data Source={dbPath}"));
 
         // Services
         services.AddSingleton<IAuthService, AuthService>();
@@ -111,21 +110,6 @@ public partial class App : Application
                 
                 Log.Information("Initialisation de la base de données SQLite...");
                 await dbContext.Database.EnsureCreatedAsync();
-                
-                // Add new columns if upgrading from older version
-                try
-                {
-                    await dbContext.Database.ExecuteSqlRawAsync(
-                        "ALTER TABLE type_tickets ADD COLUMN ImageUrl TEXT");
-                }
-                catch { /* Column already exists */ }
-                try
-                {
-                    await dbContext.Database.ExecuteSqlRawAsync(
-                        "ALTER TABLE type_tickets ADD COLUMN LocalImagePath TEXT");
-                }
-                catch { /* Column already exists */ }
-                
                 Log.Information("Base de données initialisée avec succès");
             }
 

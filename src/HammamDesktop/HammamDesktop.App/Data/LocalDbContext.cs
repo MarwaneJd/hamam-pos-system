@@ -28,6 +28,7 @@ public class LocalDbContext : DbContext
             entity.HasIndex(t => t.SyncStatus);
             entity.HasIndex(t => t.EmployeId);
             entity.HasIndex(t => new { t.EmployeId, t.CreatedAt });
+            entity.HasIndex(t => new { t.HammamId, t.CreatedAt });
         });
 
         // Seed des types de tickets par défaut

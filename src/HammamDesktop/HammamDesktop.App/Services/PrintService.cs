@@ -126,18 +126,37 @@ public class PrintService : IPrintService
         });
     }
 
+    /// <summary>
+    /// Trouve la meilleure police disponible pour l'arabe
+    /// </summary>
+    private static string GetArabicFontFamily()
+    {
+        // Polices classées par qualité de rendu arabe
+        string[] candidates = { "Arabic Typesetting", "Sakkal Majalla", "Traditional Arabic", "Simplified Arabic", "Segoe UI" };
+        var installed = new System.Drawing.Text.InstalledFontCollection();
+        var familyNames = new HashSet<string>(installed.Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+        foreach (var name in candidates)
+        {
+            if (familyNames.Contains(name)) return name;
+        }
+        return "Segoe UI";
+    }
+
     private void PrintDocument_PrintPage(object sender, PrintPageEventArgs e)
     {
         if (_currentTicket == null || e.Graphics == null) return;
 
         var g = e.Graphics;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         
+        var arabicFamily = GetArabicFontFamily();
+
         // Polices pour impression thermique
         var fontTitle = new Font("Segoe UI", 12, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontLarge = new Font("Segoe UI", 14, FontStyle.Bold);
         var fontSmall = new Font("Segoe UI", 8, FontStyle.Regular);
-        var fontArabic = new Font("Segoe UI", 14, FontStyle.Bold);
+        var fontArabic = new Font(arabicFamily, 16, FontStyle.Bold);
 
         float x = 5; // Marge gauche
         float y = 5; // Position verticale
@@ -148,7 +167,7 @@ public class PrintService : IPrintService
         var format = new StringFormat { Alignment = StringAlignment.Center };
         var formatLeft = new StringFormat { Alignment = StringAlignment.Near };
         var formatRight = new StringFormat { Alignment = StringAlignment.Far };
-        var formatRTL = new StringFormat { Alignment = StringAlignment.Center, FormatFlags = StringFormatFlags.DirectionRightToLeft };
+        var formatRTL = new StringFormat { Alignment = StringAlignment.Center };
 
         // Traduction du type de ticket en arabe
         var typeArabe = _currentTicket.TypeTicket.ToUpper() switch
@@ -174,9 +193,10 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         // EN-TÊTE - Nom du Hammam en ARABE
         // ═══════════════════════════════════════
+        var arabicSize = g.MeasureString(hammamArabe, fontArabic);
         g.DrawString(hammamArabe, fontArabic, brush, 
-            new RectangleF(x, y, width, lineHeight + 5), formatRTL);
-        y += lineHeight + 5;
+            new RectangleF(x, y, width, arabicSize.Height + 4), format);
+        y += arabicSize.Height + 4;
 
         // Ligne de séparation
         g.DrawLine(Pens.Black, x, y, x + width, y);
@@ -196,8 +216,9 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         // TYPE DE TICKET en ARABE (رجل, إمرأة, etc.)
         // ═══════════════════════════════════════
+        var typeSize = g.MeasureString(typeArabe, fontArabic);
         g.DrawString(typeArabe, fontArabic, brush,
-            new RectangleF(x, y, width, lineHeight + 5), formatRTL);
+            new RectangleF(x, y, width, typeSize.Height + 4), format);
         y += lineHeight + 10;
 
         // ═══════════════════════════════════════
@@ -248,6 +269,7 @@ public class PrintService : IPrintService
         fontNormal.Dispose();
         fontLarge.Dispose();
         fontSmall.Dispose();
+        fontArabic.Dispose();
 
         e.HasMorePages = false;
     }
@@ -292,8 +314,9 @@ public class PrintService : IPrintService
         // Log pour debug
         Log.Information("Impression clôture - NomArabe: {NomArabe}", _currentCloture.HammamNomArabe);
         
-        // Police qui supporte l'arabe - Segoe UI est installé par défaut sur Windows
-        var fontArabic = new Font("Segoe UI", 14, FontStyle.Bold);
+        // Police qui supporte l'arabe
+        var arabicFamily = GetArabicFontFamily();
+        var fontArabic = new Font(arabicFamily, 16, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
 

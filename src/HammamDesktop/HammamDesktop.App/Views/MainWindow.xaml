@@ -24,8 +24,9 @@
         <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter"/>
         <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
         <converters:IconNameToKindConverter x:Key="IconNameToKindConverter"/>
-        <converters:ImagePathToSourceConverter x:Key="ImagePathToSourceConverter"/>
+        <converters:ImagePathConverter x:Key="ImagePathConverter"/>
         <converters:HasImageToVisibilityConverter x:Key="HasImageToVisibilityConverter"/>
+        <converters:NoImageToVisibilityConverter x:Key="NoImageToVisibilityConverter"/>
     </Window.Resources>
 
     <Grid>
@@ -145,7 +146,7 @@
                                         <Border.Effect>
                                             <DropShadowEffect BlurRadius="20" 
                                                               ShadowDepth="0"
-                                                              Opacity="0.3"
+                                                              Opacity="0.4"
                                                               Color="Black"/>
                                         </Border.Effect>
                                         <Grid Margin="20">
@@ -155,37 +156,36 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <!-- Product image or icon -->
-                                            <Grid Grid.Row="0"
-                                                  Width="70" Height="70"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center"
-                                                  Margin="0,5,0,10">
-                                                <!-- Uploaded product image -->
-                                                <Border CornerRadius="12"
-                                                        ClipToBounds="True"
-                                                        Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}}">
-                                                    <Image Source="{Binding LocalImagePath, Converter={StaticResource ImagePathToSourceConverter}}"
-                                                           Stretch="Uniform"
-                                                           Width="64" Height="64"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                </Border>
-                                                <!-- Fallback: MaterialDesign icon -->
-                                                <Border CornerRadius="35"
-                                                        Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}, ConverterParameter=Invert}">
-                                                    <Border.Background>
-                                                        <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
-                                                    </Border.Background>
+                                            <!-- Icône ou Image -->
+                                            <Border Grid.Row="0"
+                                                    Width="70" Height="70"
+                                                    CornerRadius="35"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,5,0,10">
+                                                <Border.Background>
+                                                    <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
+                                                </Border.Background>
+                                                <Grid>
+                                                    <!-- Image uploadée (prioritaire) -->
+                                                    <Border CornerRadius="35" ClipToBounds="True"
+                                                            Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}}">
+                                                        <Image Source="{Binding LocalImagePath, Converter={StaticResource ImagePathConverter}}"
+                                                               Stretch="UniformToFill"
+                                                               Width="70" Height="70"/>
+                                                    </Border>
+                                                    <!-- Fallback: Icône MaterialDesign -->
                                                     <materialDesign:PackIcon Kind="{Binding Icone, Converter={StaticResource IconNameToKindConverter}}"
                                                                              Width="38" Height="38"
                                                                              HorizontalAlignment="Center"
-                                                                             VerticalAlignment="Center">
+                                                                             VerticalAlignment="Center"
+                                                                             Visibility="{Binding LocalImagePath, Converter={StaticResource NoImageToVisibilityConverter}}">
                                                         <materialDesign:PackIcon.Foreground>
                                                             <SolidColorBrush Color="{Binding Couleur}"/>
                                                         </materialDesign:PackIcon.Foreground>
                                                     </materialDesign:PackIcon>
-                                                </Border>
-                                            </Grid>
+                                                </Grid>
+                                            </Border>
 
                                             <TextBlock Grid.Row="1"
                                                        Text="{Binding Nom}"
@@ -200,7 +200,7 @@
                                                        Margin="0,5,0,10">
                                                 <Run Text="{Binding Prix, StringFormat={}{0:N0}}" 
                                                      FontSize="26" FontWeight="Bold"
-                                                     Foreground="#22C55E"/>
+                                                     Foreground="#4ADE80"/>
                                                 <Run Text=" DH" 
                                                      FontSize="14"
                                                      Foreground="{StaticResource TextSecondary}"/>
@@ -242,7 +242,7 @@
                     VerticalAlignment="Bottom"
                     Margin="0,0,0,32"
                     Visibility="{Binding ShowConfirmation, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Border Background="#22C55E"
+                    <Border Background="#16A34A"
                         CornerRadius="16"
                         Padding="32,16">
                     <StackPanel Orientation="Horizontal">
@@ -297,7 +297,7 @@
                                HorizontalAlignment="Center"/>
                     <TextBlock Text="{Binding TodayDate}"
                                FontSize="36" FontWeight="Bold"
-                               Foreground="#22C55E"
+                               Foreground="#4ADE80"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
 

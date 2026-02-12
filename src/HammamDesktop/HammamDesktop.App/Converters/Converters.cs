@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace HammamDesktop.Converters;
 
@@ -135,55 +136,6 @@ public class HexToBrushConverter : IValueConverter
 }
 
 /// <summary>
-/// Convertit un chemin d'image local en BitmapImage, retourne null si pas d'image
-/// </summary>
-public class ImagePathToSourceConverter : IValueConverter
-{
-    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        if (value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
-        {
-            try
-            {
-                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-                bitmap.BeginInit();
-                bitmap.UriSource = new Uri(path, UriKind.Absolute);
-                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bitmap.EndInit();
-                bitmap.Freeze();
-                return bitmap;
-            }
-            catch { return null; }
-        }
-        return null;
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}
-
-/// <summary>
-/// Returns Visible if the local image path exists, Collapsed otherwise
-/// </summary>
-public class HasImageToVisibilityConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        var hasImage = value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path);
-        var invert = parameter is string p && p == "Invert";
-        if (invert) hasImage = !hasImage;
-        return hasImage ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}
-
-/// <summary>
 /// Convertit un nom d'icône en MaterialDesign PackIconKind
 /// </summary>
 public class IconNameToKindConverter : IValueConverter
@@ -206,6 +158,75 @@ public class IconNameToKindConverter : IValueConverter
             };
         }
         return MaterialDesignThemes.Wpf.PackIconKind.Account;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Convertit un chemin d'image local en BitmapImage
+/// </summary>
+public class ImagePathConverter : IValueConverter
+{
+    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+        {
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Retourne Visible si l'image locale existe, sinon Collapsed
+/// </summary>
+public class HasImageToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+            return Visibility.Visible;
+        return Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+/// <summary>
+/// Retourne Visible si PAS d'image locale, sinon Collapsed (pour fallback icône)
+/// </summary>
+public class NoImageToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string path && !string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+            return Visibility.Collapsed;
+        return Visibility.Visible;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

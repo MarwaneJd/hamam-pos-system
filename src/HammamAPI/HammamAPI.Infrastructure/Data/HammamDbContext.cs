@@ -150,7 +150,7 @@ public class HammamDbContext : DbContext
             entity.HasIndex(v => v.DateVersement);
             entity.HasIndex(v => v.EmployeId);
             entity.HasIndex(v => v.HammamId);
-            entity.HasIndex(v => new { v.EmployeId, v.DateVersement }).IsUnique();
+            entity.HasIndex(v => new { v.HammamId, v.DateVersement }).IsUnique();
 
             // Relations
             entity.HasOne(v => v.Employe)

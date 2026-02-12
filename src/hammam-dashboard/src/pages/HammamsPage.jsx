@@ -26,7 +26,7 @@ import {
     Shield,
     Delete,
     Upload,
-    ImageIcon,
+    Image,
 } from 'lucide-react'
 import LoadingSpinner from '../components/LoadingSpinner'
 
@@ -182,6 +182,37 @@ export default function HammamsPage() {
         }
     }
 
+    const handleProductImageUpload = async (productId, file) => {
+        if (!file) return
+        setSavingItem(`product-${productId}`)
+        try {
+            const updated = await typeTicketsService.uploadImage(productId, file)
+            setExistingTypeTickets(prev => prev.map(p =>
+                p.id === productId ? { ...p, imageUrl: updated.imageUrl } : p
+            ))
+            toast.success('Image mise à jour')
+        } catch (error) {
+            toast.error(error.response?.data || 'Erreur lors de l\'upload')
+        } finally {
+            setSavingItem(null)
+        }
+    }
+
+    const handleDeleteProductImage = async (productId) => {
+        setSavingItem(`product-${productId}`)
+        try {
+            await typeTicketsService.deleteImage(productId)
+            setExistingTypeTickets(prev => prev.map(p =>
+                p.id === productId ? { ...p, imageUrl: null } : p
+            ))
+            toast.success('Image supprimée')
+        } catch (error) {
+            toast.error('Erreur lors de la suppression')
+        } finally {
+            setSavingItem(null)
+        }
+    }
+
     const addNewProductToHammam = async () => {
         if (!selectedHammam?.id) return
 
@@ -202,39 +233,6 @@ export default function HammamsPage() {
             toast.success('Nouveau produit ajouté')
         } catch (error) {
             toast.error('Erreur lors de la création du produit')
-        } finally {
-            setSavingItem(null)
-        }
-    }
-
-    // ======= Upload d'image produit =======
-    const handleProductImageUpload = async (productId, file) => {
-        if (!file) return
-        setSavingItem(`product-image-${productId}`)
-        try {
-            const updated = await typeTicketsService.uploadImage(productId, file)
-            setExistingTypeTickets(prev => prev.map(p =>
-                p.id === productId ? { ...p, imageUrl: updated.imageUrl } : p
-            ))
-            toast.success('Image mise à jour')
-        } catch (error) {
-            console.error('Erreur upload image:', error)
-            toast.error('Erreur lors du téléversement de l\'image')
-        } finally {
-            setSavingItem(null)
-        }
-    }
-
-    const handleDeleteProductImage = async (productId) => {
-        setSavingItem(`product-image-${productId}`)
-        try {
-            await typeTicketsService.deleteImage(productId)
-            setExistingTypeTickets(prev => prev.map(p =>
-                p.id === productId ? { ...p, imageUrl: null } : p
-            ))
-            toast.success('Image supprimée')
-        } catch (error) {
-            toast.error('Erreur lors de la suppression de l\'image')
         } finally {
             setSavingItem(null)
         }
@@ -755,46 +753,31 @@ export default function HammamsPage() {
                                                                 />
                                                             </div>
                                                             {/* Image upload */}
-                                                            <div className="flex items-center gap-3">
+                                                            <div className="flex gap-2 items-center">
                                                                 {type.imageUrl ? (
-                                                                    <div className="relative group">
-                                                                        <img
-                                                                            src={type.imageUrl}
-                                                                            alt={type.nom}
-                                                                            className="w-16 h-16 object-contain rounded-lg border border-slate-600 bg-slate-900 p-1"
-                                                                        />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <img src={type.imageUrl} alt={type.nom} className="w-12 h-12 rounded-lg object-cover border border-slate-600" />
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleDeleteProductImage(type.id)}
-                                                                            disabled={savingItem === `product-image-${type.id}`}
-                                                                            className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                            title="Supprimer l'image"
+                                                                            disabled={savingItem === `product-${type.id}`}
+                                                                            className="text-xs text-danger-400 hover:text-danger-300"
                                                                         >
-                                                                            <X className="w-3 h-3" />
+                                                                            Supprimer image
                                                                         </button>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center bg-slate-900/50">
-                                                                        <ImageIcon className="w-6 h-6 text-slate-500" />
-                                                                    </div>
-                                                                )}
-                                                                <label className="cursor-pointer flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">
-                                                                    {savingItem === `product-image-${type.id}` ? (
-                                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                                    ) : (
+                                                                    <label className="flex items-center gap-1 px-3 py-2 bg-slate-700/50 text-slate-300 hover:bg-slate-700 rounded-lg cursor-pointer text-sm">
                                                                         <Upload className="w-4 h-4" />
-                                                                    )}
-                                                                    {type.imageUrl ? 'Changer' : 'Ajouter image'}
-                                                                    <input
-                                                                        type="file"
-                                                                        accept="image/*"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files[0]) handleProductImageUpload(type.id, e.target.files[0])
-                                                                            e.target.value = ''
-                                                                        }}
-                                                                    />
-                                                                </label>
+                                                                        Image
+                                                                        <input
+                                                                            type="file"
+                                                                            accept="image/*"
+                                                                            className="hidden"
+                                                                            onChange={(e) => handleProductImageUpload(type.id, e.target.files[0])}
+                                                                        />
+                                                                    </label>
+                                                                )}
                                                             </div>
                                                             <div className="flex gap-2 items-center">
                                                                 <div className="flex items-center gap-1">
@@ -829,11 +812,7 @@ export default function HammamsPage() {
                                                         // Mode affichage du produit
                                                         <div className="flex gap-2 items-center">
                                                             {type.imageUrl ? (
-                                                                <img
-                                                                    src={type.imageUrl}
-                                                                    alt={type.nom}
-                                                                    className="w-8 h-8 object-contain rounded flex-shrink-0"
-                                                                />
+                                                                <img src={type.imageUrl} alt={type.nom} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
                                                             ) : (
                                                                 <div
                                                                     className="w-4 h-4 rounded-full flex-shrink-0"

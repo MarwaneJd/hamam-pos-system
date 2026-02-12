@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace HammamAPI.WebAPI.Controllers;
 
 /// <summary>
-/// Contrôleur pour la gestion des versements et comptabilité employés
+/// Contrôleur pour la comptabilité journalière par hammam
+/// L'admin reçoit l'argent du jour complet, pas par employé
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -24,7 +25,8 @@ public class ComptabiliteController : ControllerBase
     }
 
     /// <summary>
-    /// Obtenir le résumé des ventes par employé pour un hammam et une période
+    /// Résumé journalier pour un hammam sur une période
+    /// Chaque ligne = 1 jour avec total tickets, théorique, remis, écart
     /// </summary>
     [HttpGet("resume")]
     public async Task<ActionResult<ComptabiliteResumeDto>> GetResume(
@@ -32,98 +34,81 @@ public class ComptabiliteController : ControllerBase
         [FromQuery] DateTime dateDebut,
         [FromQuery] DateTime dateFin)
     {
-        // Convertir en UTC pour PostgreSQL
         var from = DateTime.SpecifyKind(dateDebut.Date, DateTimeKind.Utc);
         var to = DateTime.SpecifyKind(dateFin.Date.AddDays(1), DateTimeKind.Utc);
 
-        // Récupérer les employés du hammam
-        var employes = await _context.Employes
-            .Where(e => e.HammamId == hammamId)
-            .ToListAsync();
-
-        // Récupérer les tickets de la période
+        // Tickets de la période pour ce hammam (tous employés confondus)
         var tickets = await _context.Tickets
-            .Include(t => t.Employe)
             .Include(t => t.TypeTicket)
             .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to)
             .ToListAsync();
 
-        // Récupérer les versements existants
+        // Versements existants (par jour, sans filtre employé)
         var versements = await _context.Versements
             .Where(v => v.HammamId == hammamId && v.DateVersement >= from && v.DateVersement < to)
             .ToListAsync();
 
-        // Grouper par employé et par jour
-        var resumeParEmploye = new List<EmployeComptabiliteDto>();
+        // Grouper tickets par jour
+        var ticketsParJour = tickets.GroupBy(t => t.CreatedAt.Date).ToDictionary(g => g.Key, g => g.ToList());
 
-        foreach (var employe in employes)
+        // Collecter tous les jours (avec tickets ou avec versement)
+        var tousLesJours = ticketsParJour.Keys
+            .Union(versements.Select(v => v.DateVersement.Date))
+            .Distinct()
+            .OrderByDescending(d => d)
+            .ToList();
+
+        var jours = new List<JourComptabiliteDto>();
+
+        foreach (var jour in tousLesJours)
         {
-            var ticketsEmploye = tickets.Where(t => t.EmployeId == employe.Id).ToList();
-            
-            // Grouper par jour
-            var joursDetails = new List<JourDetailDto>();
-            var ticketsParJour = ticketsEmploye.GroupBy(t => t.CreatedAt.Date);
+            var ticketsJour = ticketsParJour.GetValueOrDefault(jour, new List<Ticket>());
+            var montantTheorique = ticketsJour.Sum(t => t.Prix);
+            var nombreTickets = ticketsJour.Count;
 
-            foreach (var groupe in ticketsParJour)
-            {
-                var jour = groupe.Key;
-                var montantTheorique = groupe.Sum(t => t.Prix);
-                var nombreTickets = groupe.Count();
+            // Versement du jour pour ce hammam (prendre le premier, normalement un seul par jour)
+            var versement = versements.FirstOrDefault(v => v.DateVersement.Date == jour);
 
-                // Chercher si un versement existe pour ce jour
-                var versement = versements.FirstOrDefault(v => 
-                    v.EmployeId == employe.Id && 
-                    v.DateVersement.Date == jour);
-
-                joursDetails.Add(new JourDetailDto
+            // Détail par type de ticket
+            var detailParType = ticketsJour
+                .GroupBy(t => new { t.TypeTicket.Nom, t.TypeTicket.Couleur })
+                .Select(g => new TypeTicketResumeDto
                 {
-                    Date = jour,
-                    NombreTickets = nombreTickets,
-                    MontantTheorique = montantTheorique,
-                    MontantRemis = versement?.MontantRemis,
-                    Ecart = versement?.Ecart,
-                    VersementId = versement?.Id,
-                    Commentaire = versement?.Commentaire,
-                    EstValide = versement != null
-                });
-            }
-
-            // Ajouter les jours sans tickets mais avec versement
-            var joursAvecVersementSansTicket = versements
-                .Where(v => v.EmployeId == employe.Id && 
-                       !joursDetails.Any(j => j.Date.Date == v.DateVersement.Date))
+                    Nom = g.Key.Nom,
+                    Couleur = g.Key.Couleur,
+                    Nombre = g.Count(),
+                    Montant = g.Sum(t => t.Prix)
+                })
+                .OrderBy(t => t.Nom)
                 .ToList();
 
-            foreach (var v in joursAvecVersementSansTicket)
+            jours.Add(new JourComptabiliteDto
             {
-                joursDetails.Add(new JourDetailDto
+                Date = jour,
+                NombreTickets = nombreTickets,
+                MontantTheorique = montantTheorique,
+                MontantRemis = versement?.MontantRemis,
+                Ecart = versement?.Ecart,
+                VersementId = versement?.Id,
+                Commentaire = versement?.Commentaire,
+                EstValide = versement != null,
+                DetailParType = detailParType
+            });
+        }
+
+        // Si la période n'a aucun jour, ajouter les jours vides
+        if (jours.Count == 0)
+        {
+            for (var d = dateFin.Date; d >= dateDebut.Date; d = d.AddDays(-1))
+            {
+                jours.Add(new JourComptabiliteDto
                 {
-                    Date = v.DateVersement.Date,
-                    NombreTickets = v.NombreTickets,
-                    MontantTheorique = v.MontantTheorique,
-                    MontantRemis = v.MontantRemis,
-                    Ecart = v.Ecart,
-                    VersementId = v.Id,
-                    Commentaire = v.Commentaire,
-                    EstValide = true
+                    Date = DateTime.SpecifyKind(d, DateTimeKind.Utc),
+                    NombreTickets = 0,
+                    MontantTheorique = 0,
+                    DetailParType = new List<TypeTicketResumeDto>()
                 });
             }
-
-            var totalTheorique = joursDetails.Sum(j => j.MontantTheorique);
-            var totalRemis = joursDetails.Where(j => j.MontantRemis.HasValue).Sum(j => j.MontantRemis!.Value);
-            var totalEcart = joursDetails.Where(j => j.Ecart.HasValue).Sum(j => j.Ecart!.Value);
-
-            resumeParEmploye.Add(new EmployeComptabiliteDto
-            {
-                EmployeId = employe.Id,
-                EmployeNom = $"{employe.Prenom} {employe.Nom}",
-                Username = employe.Username,
-                TotalTickets = ticketsEmploye.Count,
-                TotalTheorique = totalTheorique,
-                TotalRemis = totalRemis,
-                TotalEcart = totalEcart,
-                JoursDetails = joursDetails.OrderByDescending(j => j.Date).ToList()
-            });
         }
 
         return new ComptabiliteResumeDto
@@ -131,54 +116,52 @@ public class ComptabiliteController : ControllerBase
             HammamId = hammamId,
             DateDebut = from,
             DateFin = dateFin.Date,
-            Employes = resumeParEmploye.OrderBy(e => e.EmployeNom).ToList()
+            TotalTickets = tickets.Count,
+            TotalTheorique = tickets.Sum(t => t.Prix),
+            TotalRemis = versements.Sum(v => v.MontantRemis),
+            TotalEcart = versements.Sum(v => v.Ecart),
+            Jours = jours
         };
     }
 
     /// <summary>
-    /// Obtenir les détails d'un jour pour un employé
+    /// Détail d'un jour : liste de tous les tickets vendus
     /// </summary>
     [HttpGet("jour-detail")]
     public async Task<ActionResult<JourDetailCompletDto>> GetJourDetail(
-        [FromQuery] Guid employeId,
+        [FromQuery] Guid hammamId,
         [FromQuery] DateTime date)
     {
-        // Convertir en UTC pour PostgreSQL
         var jour = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
         var jourFin = DateTime.SpecifyKind(date.Date.AddDays(1), DateTimeKind.Utc);
 
-        var employe = await _context.Employes
-            .Include(e => e.Hammam)
-            .FirstOrDefaultAsync(e => e.Id == employeId);
+        var hammam = await _context.Hammams.FindAsync(hammamId);
+        if (hammam == null)
+            return NotFound("Hammam non trouvé");
 
-        if (employe == null)
-            return NotFound("Employé non trouvé");
-
-        // Tickets du jour
         var tickets = await _context.Tickets
             .Include(t => t.TypeTicket)
-            .Where(t => t.EmployeId == employeId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
+            .Include(t => t.Employe)
+            .Where(t => t.HammamId == hammamId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
             .OrderBy(t => t.CreatedAt)
             .ToListAsync();
 
-        // Versement existant - utiliser comparaison de date UTC
-        var versementDate = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
         var versement = await _context.Versements
-            .FirstOrDefaultAsync(v => v.EmployeId == employeId && v.DateVersement >= versementDate && v.DateVersement < jourFin);
+            .FirstOrDefaultAsync(v => v.HammamId == hammamId && v.DateVersement >= jour && v.DateVersement < jourFin);
 
         var montantTheorique = tickets.Sum(t => t.Prix);
 
         return new JourDetailCompletDto
         {
-            EmployeId = employeId,
-            EmployeNom = $"{employe.Prenom} {employe.Nom}",
-            HammamNom = employe.Hammam.Nom,
+            HammamId = hammamId,
+            HammamNom = hammam.Nom,
             Date = jour,
             Tickets = tickets.Select(t => new TicketDetailDto
             {
                 Id = t.Id,
                 Heure = t.CreatedAt,
                 TypeTicket = t.TypeTicket.Nom,
+                Employe = $"{t.Employe.Prenom} {t.Employe.Nom}",
                 Prix = t.Prix
             }).ToList(),
             NombreTickets = tickets.Count,
@@ -192,40 +175,38 @@ public class ComptabiliteController : ControllerBase
     }
 
     /// <summary>
-    /// Enregistrer ou mettre à jour un versement
+    /// Enregistrer/MAJ le versement du jour pour un hammam
     /// </summary>
     [HttpPost("versement")]
     public async Task<ActionResult<VersementResultDto>> SaveVersement([FromBody] SaveVersementDto dto)
     {
-        // Convertir en UTC pour PostgreSQL
         var jour = DateTime.SpecifyKind(dto.Date.Date, DateTimeKind.Utc);
         var jourFin = DateTime.SpecifyKind(dto.Date.Date.AddDays(1), DateTimeKind.Utc);
 
-        // Vérifier l'employé
-        var employe = await _context.Employes.FindAsync(dto.EmployeId);
-        if (employe == null)
-            return NotFound("Employé non trouvé");
+        var hammam = await _context.Hammams.FindAsync(dto.HammamId);
+        if (hammam == null)
+            return NotFound("Hammam non trouvé");
 
-        // Calculer le montant théorique
+        // Total tickets du jour pour tout le hammam
         var tickets = await _context.Tickets
-            .Where(t => t.EmployeId == dto.EmployeId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
+            .Where(t => t.HammamId == dto.HammamId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
             .ToListAsync();
 
         var montantTheorique = tickets.Sum(t => t.Prix);
         var nombreTickets = tickets.Count;
         var ecart = dto.MontantRemis - montantTheorique;
 
-        // Chercher un versement existant
+        // Chercher un versement existant pour ce hammam + jour
         var versement = await _context.Versements
-            .FirstOrDefaultAsync(v => v.EmployeId == dto.EmployeId && v.DateVersement >= jour && v.DateVersement < jourFin);
+            .FirstOrDefaultAsync(v => v.HammamId == dto.HammamId && v.DateVersement >= jour && v.DateVersement < jourFin);
 
         if (versement == null)
         {
             versement = new Versement
             {
                 Id = Guid.NewGuid(),
-                EmployeId = dto.EmployeId,
-                HammamId = employe.HammamId,
+                EmployeId = Guid.Parse("00000000-0000-0000-0000-000000000001"), // Admin placeholder
+                HammamId = dto.HammamId,
                 DateVersement = jour,
                 CreatedAt = DateTime.UtcNow
             };
@@ -240,13 +221,13 @@ public class ComptabiliteController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Versement enregistré pour {Employe} le {Date}: Théorique={Theorique}, Remis={Remis}, Écart={Ecart}",
-            $"{employe.Prenom} {employe.Nom}", jour.ToShortDateString(), montantTheorique, dto.MontantRemis, ecart);
+        _logger.LogInformation("Versement enregistré pour {Hammam} le {Date}: Théorique={Theorique}, Remis={Remis}, Écart={Ecart}",
+            hammam.Nom, jour.ToShortDateString(), montantTheorique, dto.MontantRemis, ecart);
 
         return new VersementResultDto
         {
             VersementId = versement.Id,
-            EmployeNom = $"{employe.Prenom} {employe.Nom}",
+            HammamNom = hammam.Nom,
             Date = jour,
             NombreTickets = nombreTickets,
             MontantTheorique = montantTheorique,
@@ -280,22 +261,14 @@ public class ComptabiliteResumeDto
     public Guid HammamId { get; set; }
     public DateTime DateDebut { get; set; }
     public DateTime DateFin { get; set; }
-    public List<EmployeComptabiliteDto> Employes { get; set; } = new();
-}
-
-public class EmployeComptabiliteDto
-{
-    public Guid EmployeId { get; set; }
-    public string EmployeNom { get; set; } = "";
-    public string Username { get; set; } = "";
     public int TotalTickets { get; set; }
     public decimal TotalTheorique { get; set; }
     public decimal TotalRemis { get; set; }
     public decimal TotalEcart { get; set; }
-    public List<JourDetailDto> JoursDetails { get; set; } = new();
+    public List<JourComptabiliteDto> Jours { get; set; } = new();
 }
 
-public class JourDetailDto
+public class JourComptabiliteDto
 {
     public DateTime Date { get; set; }
     public int NombreTickets { get; set; }
@@ -305,12 +278,20 @@ public class JourDetailDto
     public Guid? VersementId { get; set; }
     public string? Commentaire { get; set; }
     public bool EstValide { get; set; }
+    public List<TypeTicketResumeDto> DetailParType { get; set; } = new();
+}
+
+public class TypeTicketResumeDto
+{
+    public string Nom { get; set; } = "";
+    public string Couleur { get; set; } = "";
+    public int Nombre { get; set; }
+    public decimal Montant { get; set; }
 }
 
 public class JourDetailCompletDto
 {
-    public Guid EmployeId { get; set; }
-    public string EmployeNom { get; set; } = "";
+    public Guid HammamId { get; set; }
     public string HammamNom { get; set; } = "";
     public DateTime Date { get; set; }
     public List<TicketDetailDto> Tickets { get; set; } = new();
@@ -328,12 +309,13 @@ public class TicketDetailDto
     public Guid Id { get; set; }
     public DateTime Heure { get; set; }
     public string TypeTicket { get; set; } = "";
+    public string Employe { get; set; } = "";
     public decimal Prix { get; set; }
 }
 
 public class SaveVersementDto
 {
-    public Guid EmployeId { get; set; }
+    public Guid HammamId { get; set; }
     public DateTime Date { get; set; }
     public decimal MontantRemis { get; set; }
     public string? Commentaire { get; set; }
@@ -342,7 +324,7 @@ public class SaveVersementDto
 public class VersementResultDto
 {
     public Guid VersementId { get; set; }
-    public string EmployeNom { get; set; } = "";
+    public string HammamNom { get; set; } = "";
     public DateTime Date { get; set; }
     public int NombreTickets { get; set; }
     public decimal MontantTheorique { get; set; }

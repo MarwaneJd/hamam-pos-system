@@ -26,8 +26,16 @@ public class TypeTicketsController : ControllerBase
         _env = env;
     }
 
+    private string? GetFullImageUrl(string? imageUrl)
+    {
+        if (string.IsNullOrEmpty(imageUrl)) return null;
+        if (imageUrl.StartsWith("http")) return imageUrl;
+        return $"{Request.Scheme}://{Request.Host}{imageUrl}";
+    }
+
     private TypeTicketDto ToDto(TypeTicket t) => new(
-        t.Id, t.Nom, t.Prix, t.Couleur, t.Icone, t.ImageUrl, t.Ordre, t.Actif, t.HammamId
+        t.Id, t.Nom, t.Prix, t.Couleur, t.Icone,
+        GetFullImageUrl(t.ImageUrl), t.Ordre, t.Actif, t.HammamId
     );
 
     /// <summary>
@@ -95,84 +103,6 @@ public class TypeTicketsController : ControllerBase
     }
 
     /// <summary>
-    /// Upload une image pour un type de ticket
-    /// </summary>
-    [HttpPost("{id:guid}/upload-image")]
-    [Authorize(Roles = "Admin,Manager")]
-    public async Task<ActionResult<TypeTicketDto>> UploadImage(Guid id, IFormFile file)
-    {
-        var type = await _context.TypeTickets.FindAsync(id);
-        if (type == null)
-            return NotFound();
-
-        if (file == null || file.Length == 0)
-            return BadRequest(new { message = "Aucun fichier fourni" });
-
-        // Validate file type
-        var allowedTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml" };
-        if (!allowedTypes.Contains(file.ContentType.ToLower()))
-            return BadRequest(new { message = "Type de fichier non supporté. Utilisez JPG, PNG, GIF, WebP ou SVG." });
-
-        // Max 5MB
-        if (file.Length > 5 * 1024 * 1024)
-            return BadRequest(new { message = "Le fichier ne doit pas dépasser 5 Mo" });
-
-        var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "products");
-        Directory.CreateDirectory(uploadsDir);
-
-        // Delete old image if exists
-        if (!string.IsNullOrEmpty(type.ImageUrl))
-        {
-            var oldFileName = Path.GetFileName(type.ImageUrl);
-            var oldFilePath = Path.Combine(uploadsDir, oldFileName);
-            if (System.IO.File.Exists(oldFilePath))
-                System.IO.File.Delete(oldFilePath);
-        }
-
-        var ext = Path.GetExtension(file.FileName).ToLower();
-        var fileName = $"{id}{ext}";
-        var filePath = Path.Combine(uploadsDir, fileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream);
-        }
-
-        type.ImageUrl = $"/uploads/products/{fileName}";
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Image uploadée pour le type de ticket: {TypeName}", type.Nom);
-
-        return Ok(ToDto(type));
-    }
-
-    /// <summary>
-    /// Supprimer l'image d'un type de ticket
-    /// </summary>
-    [HttpDelete("{id:guid}/image")]
-    [Authorize(Roles = "Admin,Manager")]
-    public async Task<ActionResult<TypeTicketDto>> DeleteImage(Guid id)
-    {
-        var type = await _context.TypeTickets.FindAsync(id);
-        if (type == null)
-            return NotFound();
-
-        if (!string.IsNullOrEmpty(type.ImageUrl))
-        {
-            var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "products");
-            var fileName = Path.GetFileName(type.ImageUrl);
-            var filePath = Path.Combine(uploadsDir, fileName);
-            if (System.IO.File.Exists(filePath))
-                System.IO.File.Delete(filePath);
-
-            type.ImageUrl = null;
-            await _context.SaveChangesAsync();
-        }
-
-        return Ok(ToDto(type));
-    }
-
-    /// <summary>
     /// Crée un nouveau type de ticket
     /// </summary>
     [HttpPost]
@@ -217,7 +147,7 @@ public class TypeTicketsController : ControllerBase
         if (request.Prix.HasValue) type.Prix = request.Prix.Value;
         if (request.Couleur != null) type.Couleur = request.Couleur;
         if (request.Icone != null) type.Icone = request.Icone;
-        if (request.ImageUrl != null) type.ImageUrl = request.ImageUrl == "" ? null : request.ImageUrl;
+        if (request.ImageUrl != null) type.ImageUrl = request.ImageUrl;
         if (request.Ordre.HasValue) type.Ordre = request.Ordre.Value;
         if (request.Actif.HasValue) type.Actif = request.Actif.Value;
         
@@ -267,5 +197,93 @@ public class TypeTicketsController : ControllerBase
         _logger.LogInformation("Type de ticket supprimé: {TypeName}", type.Nom);
         
         return NoContent();
+    }
+
+    /// <summary>
+    /// Upload une image pour un type de ticket
+    /// </summary>
+    [HttpPost("{id:guid}/upload-image")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<ActionResult<TypeTicketDto>> UploadImage(Guid id, IFormFile file)
+    {
+        var type = await _context.TypeTickets.FindAsync(id);
+        
+        if (type == null)
+            return NotFound();
+
+        if (file == null || file.Length == 0)
+            return BadRequest("Aucun fichier fourni");
+
+        // Valider le type de fichier
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".svg" };
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!allowedExtensions.Contains(extension))
+            return BadRequest("Format non supporté. Utilisez: jpg, png, webp, svg");
+
+        // Limiter la taille (2 MB)
+        if (file.Length > 2 * 1024 * 1024)
+            return BadRequest("Image trop volumineuse (max 2 MB)");
+
+        try
+        {
+            // Créer le dossier uploads/typetickets
+            var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "typetickets");
+            Directory.CreateDirectory(uploadsDir);
+
+            // Supprimer l'ancienne image si elle existe
+            if (!string.IsNullOrEmpty(type.ImageUrl))
+            {
+                var oldPath = Path.Combine(_env.ContentRootPath, type.ImageUrl.TrimStart('/'));
+                if (System.IO.File.Exists(oldPath))
+                    System.IO.File.Delete(oldPath);
+            }
+
+            // Sauvegarder le fichier
+            var fileName = $"{id}{extension}";
+            var filePath = Path.Combine(uploadsDir, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Mettre à jour l'URL dans la base
+            type.ImageUrl = $"/uploads/typetickets/{fileName}";
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Image uploadée pour le type de ticket: {TypeName}", type.Nom);
+
+            return Ok(ToDto(type));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de l'upload d'image");
+            return StatusCode(500, "Erreur lors de l'upload");
+        }
+    }
+
+    /// <summary>
+    /// Supprime l'image d'un type de ticket
+    /// </summary>
+    [HttpDelete("{id:guid}/image")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<ActionResult<TypeTicketDto>> DeleteImage(Guid id)
+    {
+        var type = await _context.TypeTickets.FindAsync(id);
+        
+        if (type == null)
+            return NotFound();
+
+        if (!string.IsNullOrEmpty(type.ImageUrl))
+        {
+            var filePath = Path.Combine(_env.ContentRootPath, type.ImageUrl.TrimStart('/'));
+            if (System.IO.File.Exists(filePath))
+                System.IO.File.Delete(filePath);
+        }
+
+        type.ImageUrl = null;
+        await _context.SaveChangesAsync();
+
+        return Ok(ToDto(type));
     }
 }
