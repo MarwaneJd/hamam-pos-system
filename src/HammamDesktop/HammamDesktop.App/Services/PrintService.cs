@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Printing;
+using System.IO;
 using System.Text;
 using Serilog;
 
@@ -45,6 +46,7 @@ public class TicketPrintData
     public DateTime DateHeure { get; set; }
     public string EmployeNom { get; set; } = "";
     public string? Couleur { get; set; }
+    public string? TypeTicketImagePath { get; set; }
 }
 
 /// <summary>
@@ -110,7 +112,7 @@ public class PrintService : IPrintService
                 // Configuration pour imprimante thermique 58mm
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Thermal58", 
                     (int)(PAPER_WIDTH_MM * 3.937), // Conversion mm en 1/100 pouces
-                    (int)(120 * 3.937)); // Hauteur estimée ~120mm
+                    (int)(150 * 3.937)); // Hauteur estimée ~150mm (espace pour logo)
                 
                 printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
@@ -152,11 +154,13 @@ public class PrintService : IPrintService
         var arabicFamily = GetArabicFontFamily();
 
         // Polices pour impression thermique
-        var fontTitle = new Font("Segoe UI", 12, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontLarge = new Font("Segoe UI", 14, FontStyle.Bold);
         var fontSmall = new Font("Segoe UI", 8, FontStyle.Regular);
-        var fontArabic = new Font(arabicFamily, 16, FontStyle.Bold);
+        var fontArabicTitle = new Font(arabicFamily, 16, FontStyle.Bold);
+        var fontArabicType = new Font(arabicFamily, 14, FontStyle.Bold);
+        var fontArabicSmall = new Font(arabicFamily, 10, FontStyle.Regular);
+        var fontArabicLabel = new Font(arabicFamily, 10, FontStyle.Regular);
 
         float x = 5; // Marge gauche
         float y = 5; // Position verticale
@@ -165,111 +169,100 @@ public class PrintService : IPrintService
 
         var brush = Brushes.Black;
         var format = new StringFormat { Alignment = StringAlignment.Center };
-        var formatLeft = new StringFormat { Alignment = StringAlignment.Near };
-        var formatRight = new StringFormat { Alignment = StringAlignment.Far };
-        var formatRTL = new StringFormat { Alignment = StringAlignment.Center };
 
-        // Traduction du type de ticket en arabe
-        var typeArabe = _currentTicket.TypeTicket.ToUpper() switch
-        {
-            "HOMME" => "رجل",
-            "FEMME" => "إمرأة",
-            "ENFANT" => "طفل",
-            "DOUCHE" => "دوش",
-            _ => _currentTicket.TypeTicket
-        };
-
-        // Nom du hammam en arabe (avec fallback hardcodé)
+        // Nom du hammam en arabe (avec fallback)
         var hammamArabe = !string.IsNullOrEmpty(_currentTicket.HammamNomArabe) 
             ? _currentTicket.HammamNomArabe 
-            : _currentTicket.HammamNom.ToLower() switch
+            : _currentTicket.HammamNom;
+
+        // ═══════════════════════════════════════
+        // LOGO DU PRODUIT (TypeTicket image)
+        // ═══════════════════════════════════════
+        if (!string.IsNullOrEmpty(_currentTicket.TypeTicketImagePath) && File.Exists(_currentTicket.TypeTicketImagePath))
+        {
+            try
             {
-                "hammame liberte" => "حمام الحرية",
-                "hammam centre" => "حمام الوسط",
-                "hammam casablanca" => "حمام الدار البيضاء",
-                _ => _currentTicket.HammamNom
-            };
+                using var logo = Image.FromFile(_currentTicket.TypeTicketImagePath);
+                // Taille cible : ~80px de hauteur, proportionnel
+                float targetHeight = 80f;
+                float scale = targetHeight / logo.Height;
+                float scaledWidth = logo.Width * scale;
+                float scaledHeight = targetHeight;
+                float logoX = x + (width - scaledWidth) / 2; // Centrer horizontalement
+                g.DrawImage(logo, logoX, y, scaledWidth, scaledHeight);
+                y += scaledHeight + 8;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Impossible de charger le logo du ticket: {Path}", _currentTicket.TypeTicketImagePath);
+            }
+        }
 
         // ═══════════════════════════════════════
-        // EN-TÊTE - Nom du Hammam en ARABE
+        // NOM DU HAMMAM EN ARABE
         // ═══════════════════════════════════════
-        var arabicSize = g.MeasureString(hammamArabe, fontArabic);
-        g.DrawString(hammamArabe, fontArabic, brush, 
+        var arabicSize = g.MeasureString(hammamArabe, fontArabicTitle);
+        g.DrawString(hammamArabe, fontArabicTitle, brush, 
             new RectangleF(x, y, width, arabicSize.Height + 4), format);
-        y += arabicSize.Height + 4;
-
-        // Ligne de séparation
-        g.DrawLine(Pens.Black, x, y, x + width, y);
-        y += 8;
+        y += arabicSize.Height + 6;
 
         // ═══════════════════════════════════════
-        // NUMÉRO DE TICKET
+        // TYPE DE TICKET (nom affiché directement)
         // ═══════════════════════════════════════
-        g.DrawString($"TICKET N° {_currentTicket.TicketNumber}", fontLarge, brush,
-            new RectangleF(x, y, width, lineHeight + 5), format);
-        y += lineHeight + 10;
-
-        // Ligne de séparation
-        g.DrawLine(Pens.Black, x, y, x + width, y);
-        y += 8;
-
-        // ═══════════════════════════════════════
-        // TYPE DE TICKET en ARABE (رجل, إمرأة, etc.)
-        // ═══════════════════════════════════════
-        var typeSize = g.MeasureString(typeArabe, fontArabic);
-        g.DrawString(typeArabe, fontArabic, brush,
+        var typeName = _currentTicket.TypeTicket;
+        var typeSize = g.MeasureString(typeName, fontArabicType);
+        g.DrawString(typeName, fontArabicType, brush,
             new RectangleF(x, y, width, typeSize.Height + 4), format);
-        y += lineHeight + 10;
+        y += typeSize.Height + 8;
 
         // ═══════════════════════════════════════
-        // PRIX
+        // NUMÉRO DE TICKET (label arabe)
         // ═══════════════════════════════════════
-        g.DrawString($"{_currentTicket.Prix:F2} DH", fontLarge, brush,
-            new RectangleF(x, y, width, lineHeight + 5), format);
-        y += lineHeight + 10;
-
-        // Ligne de séparation
-        g.DrawLine(Pens.Black, x, y, x + width, y);
-        y += 8;
+        var numberText = $"{_currentTicket.TicketNumber}  :  الرقم";
+        g.DrawString(numberText, fontArabicLabel, brush,
+            new RectangleF(x, y, width, lineHeight + 2), format);
+        y += lineHeight + 6;
 
         // ═══════════════════════════════════════
-        // DATE ET HEURE
+        // PRIX (label arabe + valeur)
         // ═══════════════════════════════════════
-        g.DrawString($"Date: {_currentTicket.DateHeure:dd/MM/yyyy}", fontNormal, brush,
+        var priceFormatted = _currentTicket.Prix.ToString("F2").Replace('.', ',');
+        var priceText = $"{priceFormatted}  :  الثمن";
+        g.DrawString(priceText, fontLarge, brush,
+            new RectangleF(x, y, width, lineHeight + 8), format);
+        y += lineHeight + 12;
+
+        // ═══════════════════════════════════════
+        // DATE ET HEURE (sur une seule ligne)
+        // ═══════════════════════════════════════
+        var dateTimeLine = $"{_currentTicket.DateHeure:HH:mm}    {_currentTicket.DateHeure:dd/MM/yyyy}";
+        g.DrawString(dateTimeLine, fontNormal, brush,
             new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight;
-
-        g.DrawString($"Heure: {_currentTicket.DateHeure:HH:mm:ss}", fontNormal, brush,
-            new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight + 5;
+        y += lineHeight + 4;
 
         // ═══════════════════════════════════════
-        // EMPLOYÉ
+        // CAISSIER
         // ═══════════════════════════════════════
-        g.DrawString($"Caissier: {_currentTicket.EmployeNom}", fontSmall, brush,
+        g.DrawString($"Caissier : {_currentTicket.EmployeNom}", fontSmall, brush,
             new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight + 5;
-
-        // Ligne de séparation
-        g.DrawLine(Pens.Black, x, y, x + width, y);
-        y += 8;
+        y += lineHeight + 6;
 
         // ═══════════════════════════════════════
-        // MESSAGE DE REMERCIEMENT
+        // MESSAGE DE REMERCIEMENT EN ARABE
         // ═══════════════════════════════════════
-        g.DrawString("Merci de votre visite!", fontSmall, brush,
-            new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight;
-
-        g.DrawString("━━━━━━━━━━━━━━━━", fontSmall, brush,
-            new RectangleF(x, y, width, lineHeight), format);
+        var merciArabe = "شكرا على زيارتكم";
+        var merciSize = g.MeasureString(merciArabe, fontArabicSmall);
+        g.DrawString(merciArabe, fontArabicSmall, brush,
+            new RectangleF(x, y, width, merciSize.Height + 4), format);
 
         // Libérer les polices
-        fontTitle.Dispose();
         fontNormal.Dispose();
         fontLarge.Dispose();
         fontSmall.Dispose();
-        fontArabic.Dispose();
+        fontArabicTitle.Dispose();
+        fontArabicType.Dispose();
+        fontArabicSmall.Dispose();
+        fontArabicLabel.Dispose();
 
         e.HasMorePages = false;
     }

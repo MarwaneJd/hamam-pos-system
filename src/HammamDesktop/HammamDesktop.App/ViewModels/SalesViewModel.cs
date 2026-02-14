@@ -164,7 +164,8 @@ public partial class SalesViewModel : ObservableObject
                 Prix = ticketType.Prix,
                 DateHeure = DateTime.Now,
                 EmployeNom = EmployeNom,
-                Couleur = ticketType.Couleur
+                Couleur = ticketType.Couleur,
+                TypeTicketImagePath = ticketType.LocalImagePath
             });
 
             // Afficher la confirmation
