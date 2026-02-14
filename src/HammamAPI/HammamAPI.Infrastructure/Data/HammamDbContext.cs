@@ -156,7 +156,8 @@ public class HammamDbContext : DbContext
             entity.HasOne(v => v.Employe)
                   .WithMany()
                   .HasForeignKey(v => v.EmployeId)
-                  .OnDelete(DeleteBehavior.Restrict);
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(v => v.Hammam)
                   .WithMany()

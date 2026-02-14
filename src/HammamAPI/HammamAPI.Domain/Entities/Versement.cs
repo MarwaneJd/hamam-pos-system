@@ -11,9 +11,9 @@ public class Versement
     public Guid Id { get; set; }
     
     /// <summary>
-    /// Employé qui fait le versement
+    /// Employé qui fait le versement (nullable — versement par hammam/jour)
     /// </summary>
-    public Guid EmployeId { get; set; }
+    public Guid? EmployeId { get; set; }
     
     /// <summary>
     /// Hammam concerné
@@ -62,6 +62,6 @@ public class Versement
     public Guid? ValidePar { get; set; }
 
     // Navigation properties
-    public virtual Employe Employe { get; set; } = null!;
+    public virtual Employe? Employe { get; set; }
     public virtual Hammam Hammam { get; set; } = null!;
 }

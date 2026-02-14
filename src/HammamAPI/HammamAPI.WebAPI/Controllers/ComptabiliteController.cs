@@ -205,7 +205,7 @@ public class ComptabiliteController : ControllerBase
             versement = new Versement
             {
                 Id = Guid.NewGuid(),
-                EmployeId = Guid.Parse("00000000-0000-0000-0000-000000000001"), // Admin placeholder
+                EmployeId = null,
                 HammamId = dto.HammamId,
                 DateVersement = jour,
                 CreatedAt = DateTime.UtcNow
@@ -219,7 +219,15 @@ public class ComptabiliteController : ControllerBase
         versement.NombreTickets = nombreTickets;
         versement.Commentaire = dto.Commentaire;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur sauvegarde versement Hammam={HammamId} Date={Date}", dto.HammamId, jour);
+            return StatusCode(500, new { message = $"Erreur DB: {ex.InnerException?.Message ?? ex.Message}" });
+        }
 
         _logger.LogInformation("Versement enregistré pour {Hammam} le {Date}: Théorique={Theorique}, Remis={Remis}, Écart={Ecart}",
             hammam.Nom, jour.ToShortDateString(), montantTheorique, dto.MontantRemis, ecart);
