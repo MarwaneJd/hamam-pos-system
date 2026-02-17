@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using HammamDesktop.ViewModels;
 
 namespace HammamDesktop.Views;
@@ -18,6 +19,8 @@ public partial class LoginWindow : Window
     private readonly IHttpClientFactory _httpClientFactory;
     private List<EmployeProfile> _profiles = new();
     private EmployeProfile? _selectedProfile;
+    private DispatcherTimer? _autoLoginTimer;
+    private bool _isAutoLogging;
 
     public LoginWindow(LoginViewModel viewModel, IHttpClientFactory httpClientFactory)
     {
@@ -216,6 +219,7 @@ public partial class LoginWindow : Window
         _selectedProfile = null;
         PasswordBox.Password = "";
         ErrorText.Visibility = Visibility.Collapsed;
+        _autoLoginTimer?.Stop();
 
         PasswordPanel.Visibility = Visibility.Collapsed;
         ProfileSelectionPanel.Visibility = Visibility.Visible;
@@ -225,6 +229,51 @@ public partial class LoginWindow : Window
     {
         _viewModel.Password = PasswordBox.Password;
         ErrorText.Visibility = Visibility.Collapsed;
+
+        // Réinitialiser le timer auto-login à chaque frappe
+        if (_autoLoginTimer != null)
+        {
+            _autoLoginTimer.Stop();
+        }
+
+        // Ne lancer le timer que si le champ n'est pas vide
+        if (!string.IsNullOrEmpty(PasswordBox.Password))
+        {
+            _autoLoginTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(3)
+            };
+            _autoLoginTimer.Tick += AutoLoginTimer_Tick;
+            _autoLoginTimer.Start();
+        }
+    }
+
+    private async void AutoLoginTimer_Tick(object? sender, EventArgs e)
+    {
+        // Arrêter le timer (un seul essai)
+        _autoLoginTimer?.Stop();
+
+        if (_selectedProfile == null || _isAutoLogging) return;
+        if (string.IsNullOrEmpty(PasswordBox.Password)) return;
+
+        _isAutoLogging = true;
+
+        try
+        {
+            // Tenter la connexion silencieusement
+            await _viewModel.LoginCommand.ExecuteAsync(null);
+
+            // Si erreur → ne rien afficher, l'utilisateur continue de taper
+            // Si succès → le ViewModel gère la navigation
+        }
+        catch
+        {
+            // Silencieux - pas de message d'erreur
+        }
+        finally
+        {
+            _isAutoLogging = false;
+        }
     }
 
     private void PasswordBox_KeyDown(object sender, KeyEventArgs e)
