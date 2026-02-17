@@ -157,7 +157,7 @@ public class PrintService : IPrintService
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontLarge = new Font("Segoe UI", 14, FontStyle.Bold);
         var fontSmall = new Font("Segoe UI", 8, FontStyle.Regular);
-        var fontArabicTitle = new Font(arabicFamily, 16, FontStyle.Bold);
+        var fontArabicTitle = new Font(arabicFamily, 20, FontStyle.Bold);
         var fontArabicType = new Font(arabicFamily, 14, FontStyle.Bold);
         var fontArabicSmall = new Font(arabicFamily, 10, FontStyle.Regular);
         var fontArabicLabel = new Font(arabicFamily, 10, FontStyle.Regular);
@@ -183,8 +183,8 @@ public class PrintService : IPrintService
             try
             {
                 using var logo = Image.FromFile(_currentTicket.TypeTicketImagePath);
-                // Taille cible : ~80px de hauteur, proportionnel
-                float targetHeight = 80f;
+                // Taille cible : ~110px de hauteur, proportionnel
+                float targetHeight = 110f;
                 float scale = targetHeight / logo.Height;
                 float scaledWidth = logo.Width * scale;
                 float scaledHeight = targetHeight;
