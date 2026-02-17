@@ -164,6 +164,16 @@ public class AuthService : IAuthService
         });
     }
 
+    /// <summary>
+    /// Supprime la session sans naviguer (utilisé à la fermeture de la fenêtre)
+    /// </summary>
+    public async Task ClearSessionAsync()
+    {
+        var sessions = await _db.Sessions.ToListAsync();
+        _db.Sessions.RemoveRange(sessions);
+        await _db.SaveChangesAsync();
+    }
+
     public async Task<bool> HasValidSessionAsync()
     {
         var session = await _db.Sessions.FirstOrDefaultAsync();

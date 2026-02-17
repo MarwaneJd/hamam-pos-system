@@ -40,9 +40,18 @@ public partial class MainWindow : Window
         TimeDisplay.Text = DateTime.Now.ToString("HH:mm:ss");
     }
 
-    protected override void OnClosed(EventArgs e)
+    protected override async void OnClosed(EventArgs e)
     {
         _clockTimer.Stop();
+        
+        // Déconnexion automatique à la fermeture (supprimer la session)
+        try
+        {
+            var authService = (Services.AuthService)App.GetService<Services.IAuthService>();
+            await authService.ClearSessionAsync();
+        }
+        catch { }
+        
         base.OnClosed(e);
     }
 }

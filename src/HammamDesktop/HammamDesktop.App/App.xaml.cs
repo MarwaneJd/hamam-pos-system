@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using System.Windows;
 using HammamDesktop.Services;
 using HammamDesktop.ViewModels;
@@ -20,6 +21,7 @@ namespace HammamDesktop;
 public partial class App : Application
 {
     private readonly IHost _host;
+    private static Mutex? _mutex;
 
     public App()
     {
@@ -97,6 +99,21 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // Vérifier qu'une seule instance tourne
+        const string mutexName = "HammamPOS_SingleInstance";
+        _mutex = new Mutex(true, mutexName, out bool isNewInstance);
+
+        if (!isNewInstance)
+        {
+            MessageBox.Show(
+                "L'application Hammam POS est déjà en cours d'exécution.",
+                "Hammam POS",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
         try
         {
             Log.Information("=== Démarrage de l'application Hammam POS ===");
