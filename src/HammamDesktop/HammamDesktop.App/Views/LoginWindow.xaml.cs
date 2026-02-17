@@ -227,6 +227,14 @@ public partial class LoginWindow : Window
         ErrorText.Visibility = Visibility.Collapsed;
     }
 
+    private void PasswordBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            LoginButton_Click(sender, e);
+        }
+    }
+
     private async void LoginButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedProfile == null) return;

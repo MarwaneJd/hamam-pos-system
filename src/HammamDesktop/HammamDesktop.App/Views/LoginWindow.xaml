@@ -88,7 +88,8 @@
                              Background="#F8FAFC"
                              Foreground="#1E293B"
                              BorderBrush="#E2E8F0"
-                             PasswordChanged="PasswordBox_PasswordChanged"/>
+                             PasswordChanged="PasswordBox_PasswordChanged"
+                             KeyDown="PasswordBox_KeyDown"/>
 
                 <!-- Message d'erreur -->
                 <TextBlock x:Name="ErrorText"

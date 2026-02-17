@@ -236,28 +236,6 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- Confirmation de vente -->
-            <Border Grid.Row="0"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Bottom"
-                    Margin="0,0,0,32"
-                    Visibility="{Binding ShowConfirmation, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Border Background="#16A34A"
-                        CornerRadius="16"
-                        Padding="32,16">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="CheckCircle" 
-                                                 Width="32" Height="32"
-                                                 Foreground="White"
-                                                 VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding LastSaleMessage}"
-                                   Margin="12,0,0,0"
-                                   FontSize="24" FontWeight="Bold"
-                                   Foreground="White"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-            </Border>
         </Grid>
 
         <!-- Footer avec statistiques -->

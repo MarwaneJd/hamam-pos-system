@@ -172,8 +172,8 @@ public partial class SalesViewModel : ObservableObject
             LastSaleMessage = $"{ticketType.Nom} - {ticketType.Prix} DH";
             ShowConfirmation = true;
 
-            // Cacher après 2 secondes
-            _ = Task.Delay(2000).ContinueWith(_ =>
+            // Cacher après 0.8 seconde (rapide pour ne pas gêner)
+            _ = Task.Delay(800).ContinueWith(_ =>
             {
                 ShowConfirmation = false;
             });
