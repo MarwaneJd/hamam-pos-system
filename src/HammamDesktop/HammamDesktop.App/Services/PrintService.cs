@@ -307,23 +307,23 @@ public class PrintService : IPrintService
         // Log pour debug
         Log.Information("Impression clôture - NomArabe: {NomArabe}", _currentCloture.HammamNomArabe);
         
-        // Police qui supporte l'arabe
+        // Polices - plus grandes que l'original mais adaptées au papier 48mm
         var arabicFamily = GetArabicFontFamily();
-        var fontArabic = new Font(arabicFamily, 16, FontStyle.Bold);
+        var fontArabicTitle = new Font(arabicFamily, 20, FontStyle.Bold);
+        var fontLarge = new Font("Segoe UI", 12, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
 
         float x = 5;
         float y = 10;
-        float lineHeight = 22;
+        float lineHeight = 24;
         float width = PRINTABLE_WIDTH_MM * 3.937f;
 
         var brush = Brushes.Black;
         var format = new StringFormat { Alignment = StringAlignment.Center };
-        var formatLeft = new StringFormat { Alignment = StringAlignment.Near };
 
         // ═══════════════════════════════════════
-        // NOM DU HAMMAM EN ARABE
+        // NOM DU HAMMAM EN ARABE (gros, centré)
         // ═══════════════════════════════════════
         string arabicName = _currentCloture.HammamNomArabe;
         if (string.IsNullOrEmpty(arabicName))
@@ -331,34 +331,38 @@ public class PrintService : IPrintService
             arabicName = _currentCloture.HammamNom; // Fallback au nom français
         }
         
-        g.DrawString(arabicName, fontArabic, brush, 
-            new RectangleF(x, y, width, lineHeight + 10), format);
-        y += lineHeight + 15;
+        var arabicSize = g.MeasureString(arabicName, fontArabicTitle);
+        g.DrawString(arabicName, fontArabicTitle, brush, 
+            new RectangleF(x, y, width, arabicSize.Height + 4), format);
+        y += arabicSize.Height + 10;
 
         // Ligne de séparation
         g.DrawLine(Pens.Black, x, y, x + width, y);
-        y += 8;
+        y += 10;
 
         // ═══════════════════════════════════════
-        // CAISSIER
+        // CAISSIER (label + nom sur 2 lignes)
         // ═══════════════════════════════════════
-        g.DrawString($"Caissier : {_currentCloture.CaissierNom.ToUpper()}", fontNormal, brush,
-            new RectangleF(x, y, width, lineHeight), formatLeft);
-        y += lineHeight;
+        g.DrawString("Caissier", fontNormal, brush,
+            new RectangleF(x, y, width, 20), format);
+        y += 20;
+        g.DrawString(_currentCloture.CaissierNom.ToUpper(), fontLarge, brush,
+            new RectangleF(x, y, width, lineHeight + 4), format);
+        y += lineHeight + 6;
 
         // ═══════════════════════════════════════
-        // HEURE
+        // HEURE (gros, centré)
         // ═══════════════════════════════════════
-        g.DrawString($"{_currentCloture.DateHeure:HH:mm}", fontNormal, brush,
-            new RectangleF(x, y, width, lineHeight), formatLeft);
-        y += lineHeight;
+        g.DrawString($"{_currentCloture.DateHeure:HH:mm}", fontLarge, brush,
+            new RectangleF(x, y, width, lineHeight + 4), format);
+        y += lineHeight + 4;
 
         // ═══════════════════════════════════════
-        // DATE
+        // DATE (gros, centré)
         // ═══════════════════════════════════════
-        g.DrawString($"{_currentCloture.DateHeure:dd/MM/yyyy}", fontNormal, brush,
-            new RectangleF(x, y, width, lineHeight), formatLeft);
-        y += lineHeight + 10;
+        g.DrawString($"{_currentCloture.DateHeure:dd/MM/yyyy}", fontLarge, brush,
+            new RectangleF(x, y, width, lineHeight + 4), format);
+        y += lineHeight + 12;
 
         // Ligne de séparation
         g.DrawLine(Pens.Black, x, y, x + width, y);
@@ -373,7 +377,8 @@ public class PrintService : IPrintService
         }
 
         // Libérer les polices
-        fontArabic.Dispose();
+        fontArabicTitle.Dispose();
+        fontLarge.Dispose();
         fontNormal.Dispose();
         fontSmall.Dispose();
 

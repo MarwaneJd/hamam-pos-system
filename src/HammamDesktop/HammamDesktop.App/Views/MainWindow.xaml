@@ -65,75 +65,119 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Indicateur de connexion -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,24,0">
-                    <Ellipse Width="12" Height="12" 
+                <!-- En ligne petit indicateur -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <Ellipse Width="10" Height="10" 
                              VerticalAlignment="Center"
                              Fill="{Binding IsOnline, Converter={StaticResource BoolToColorConverter}}"/>
                     <TextBlock Text="{Binding IsOnline, Converter={StaticResource BoolToTextConverter}}"
-                               Margin="8,0,0,0"
+                               Margin="6,0,0,0"
+                               FontSize="11"
                                VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}"/>
                     
                     <!-- Badge sync pending -->
-                    <Border Margin="16,0,0,0" 
+                    <Border Margin="8,0,0,0" 
                             Background="#F59E0B" 
-                            CornerRadius="12"
-                            Padding="8,4"
+                            CornerRadius="10"
+                            Padding="6,2"
                             Visibility="{Binding PendingSyncCount, Converter={StaticResource IntToVisibilityConverter}}">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="CloudSync" Width="16" Height="16" Foreground="White"/>
-                            <TextBlock Text="{Binding PendingSyncCount}" 
-                                       Margin="4,0,0,0"
-                                       Foreground="White" FontWeight="Bold"/>
-                        </StackPanel>
+                        <TextBlock Text="{Binding PendingSyncCount}" 
+                                   FontSize="11"
+                                   Foreground="White" FontWeight="Bold"/>
                     </Border>
+
+                    <!-- Bouton Synchronisation GRAND -->
+                    <Button Command="{Binding ForceSyncCommand}"
+                            Cursor="Hand"
+                            ToolTip="Synchroniser maintenant"
+                            Margin="12,0,0,0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="border"
+                                        Background="#3B82F6"
+                                        CornerRadius="12"
+                                        Padding="20,8">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <materialDesign:PackIcon Kind="CloudSync" Width="26" Height="26" Foreground="White" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Synchroniser" 
+                                                   FontSize="15" FontWeight="Bold"
+                                                   Foreground="White"
+                                                   Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#2563EB"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#1D4ED8"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                 </StackPanel>
 
-                <!-- Boutons -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Command="{Binding ForceSyncCommand}"
-                            Style="{StaticResource MaterialDesignOutlinedButton}"
-                            Foreground="{StaticResource TextSecondary}"
-                            BorderBrush="{StaticResource BorderColor}"
-                            Margin="0,0,8,0"
-                            ToolTip="Synchroniser maintenant">
-                        <materialDesign:PackIcon Kind="CloudSync" Width="20" Height="20"/>
-                    </Button>
-                    <Button Command="{Binding LogoutCommand}"
-                            Style="{StaticResource MaterialDesignOutlinedButton}"
-                            Foreground="#EF4444"
-                            BorderBrush="#EF4444"
-                            ToolTip="Déconnexion">
-                        <materialDesign:PackIcon Kind="Logout" Width="20" Height="20"/>
-                    </Button>
-                </StackPanel>
+                <!-- Bouton déconnexion GRAND -->
+                <Button Grid.Column="2" 
+                        Command="{Binding LogoutCommand}"
+                        Cursor="Hand"
+                        ToolTip="Déconnexion"
+                        Margin="0,8,16,8">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border"
+                                    Background="#EF4444"
+                                    CornerRadius="12"
+                                    Padding="24,8">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="Logout" Width="28" Height="28" Foreground="White" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Déconnexion" 
+                                               FontSize="16" FontWeight="Bold"
+                                               Foreground="White"
+                                               Margin="10,0,0,0"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#DC2626"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#B91C1C"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
             </Grid>
         </Border>
 
         <!-- Zone principale avec les boutons de vente -->
-        <Grid Grid.Row="1" Margin="48">
+        <Grid Grid.Row="1" Margin="32,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Boutons de vente - 3 par ligne -->
+            <!-- Boutons de vente - 2 par ligne -->
             <ItemsControl Grid.Row="0" 
                           ItemsSource="{Binding TicketTypes}"
                           HorizontalAlignment="Center"
                           VerticalAlignment="Center">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <UniformGrid Columns="3" HorizontalAlignment="Center"/>
+                        <UniformGrid Columns="2" HorizontalAlignment="Center"/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Button Command="{Binding DataContext.SellTicketCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}"
-                                Width="200" Height="220"
-                                Margin="12"
+                                Width="420" Height="180"
+                                Margin="10"
                                 Cursor="Hand">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
@@ -149,7 +193,7 @@
                                                               Opacity="0.4"
                                                               Color="Black"/>
                                         </Border.Effect>
-                                        <Grid Margin="20">
+                                        <Grid Margin="20" VerticalAlignment="Center">
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="Auto"/>
@@ -198,7 +242,7 @@
                                             <TextBlock Grid.Row="2"
                                                        HorizontalAlignment="Center"
                                                        Margin="0,5,0,10">
-                                                <Run Text="{Binding Prix, StringFormat={}{0:N0}}" 
+                                                <Run Text="{Binding Prix, StringFormat={}{0:0}}" 
                                                      FontSize="26" FontWeight="Bold"
                                                      Foreground="#4ADE80"/>
                                                 <Run Text=" DH" 
@@ -292,7 +336,7 @@
                                    VerticalAlignment="Center"/>
                         <Button Command="{Binding PrintClotureCommand}"
                                 Margin="16,0,0,0"
-                                Width="50" Height="50"
+                                Width="70" Height="70"
                                 VerticalAlignment="Center"
                                 ToolTip="Imprimer ticket de clôture"
                                 Cursor="Hand">
@@ -300,9 +344,9 @@
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="border"
                                             Background="#F59E0B"
-                                            CornerRadius="25">
+                                            CornerRadius="35">
                                         <materialDesign:PackIcon Kind="Printer"
-                                                                 Width="24" Height="24"
+                                                                 Width="34" Height="34"
                                                                  Foreground="White"
                                                                  HorizontalAlignment="Center"
                                                                  VerticalAlignment="Center"/>
