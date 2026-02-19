@@ -13,9 +13,8 @@
     <Product>Hammam Point de Vente</Product>
     <Description>Application de point de vente pour les Hammams</Description>
     
-    <!-- Optimisations pour publication (framework-dependent + trimming) -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
+    <!-- Optimisations pour publication (framework-dependent) -->
+    <!-- Note: PublishTrimmed n'est PAS compatible avec SQLite/EF Core (native libs) -->
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
