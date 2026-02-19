@@ -12,6 +12,11 @@
     <Company>Hammam System</Company>
     <Product>Hammam Point de Vente</Product>
     <Description>Application de point de vente pour les Hammams</Description>
+    
+    <!-- Optimisations pour publication (framework-dependent + trimming) -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>link</TrimMode>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>

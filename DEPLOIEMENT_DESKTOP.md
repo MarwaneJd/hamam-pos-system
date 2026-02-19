@@ -1,25 +1,43 @@
 # Guide de Déploiement — Application Desktop Hammam
 
-## 1. Publier un exe autonome (self-contained)
+## 1. Prérequis — Installer .NET 8 Desktop Runtime
 
-Pas besoin d'installer .NET sur les PCs clients. On publie un **self-contained** exe :
+⚠️ **À faire une seule fois par PC**, avant la première utilisation.
 
-```powershell
-cd src\HammamDesktop\HammamDesktop.App
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\publish\release
-```
+1. Télécharger le **Runtime .NET 8 Desktop** :  
+   👉 [https://dotnet.microsoft.com/en-us/download/dotnet/8.0](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+   → Chercher **".NET Desktop Runtime 8.x.x"** → **Windows x64** → Télécharger l'installateur
+2. Double-cliquer sur le `.exe` téléchargé → **Installer** → C'est fait ✅
+3. Aucune configuration supplémentaire nécessaire
 
-Ça produit un dossier `publish\release\` avec un seul `HammamDesktop.App.exe` (~80-150 MB) qui tourne sur n'importe quel Windows 10/11 **sans rien installer**.
+> 💡 Sans ce runtime, l'application ne démarre pas. Avec le runtime installé, l'application passe de ~178 MB à **~15-25 MB** et consomme beaucoup moins de RAM.
 
 ---
 
-## 2. Installation sur chaque PC (6 hammams)
+## 2. Publier l'application (framework-dependent + trimming)
+
+```powershell
+cd src\HammamDesktop\HammamDesktop.App
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o .\publish\release
+```
+
+Ça produit un dossier `publish\release\` avec un `HammamDesktop.App.exe` léger (~15-25 MB) qui tourne sur n'importe quel Windows 10/11 avec le runtime .NET 8 installé.
+
+> **Ancienne commande (self-contained, ~178 MB)** — ne plus utiliser :
+> ```powershell
+> dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\publish\release
+> ```
+
+---
+
+## 3. Installation sur chaque PC (6 hammams)
 
 Sur chaque PC :
 
-1. Copier le dossier `release\` sur une **clé USB** (ou téléchargement)
-2. Coller dans `C:\Hammam\`
-3. Configurer `appsettings.json` avec l'IP du VPS :
+1. **Installer .NET 8 Desktop Runtime** (voir section 1 — une seule fois)
+2. Copier le dossier `release\` sur une **clé USB** (ou téléchargement)
+3. Coller dans `C:\Hammam\`
+4. Configurer `appsettings.json` avec l'IP du VPS :
 
 ```json
 {
@@ -28,21 +46,21 @@ Sur chaque PC :
 }
 ```
 
-4. Créer un **raccourci bureau** vers `HammamDesktop.App.exe`
-5. L'employé se connecte avec son username/password → l'app détecte automatiquement son hammam
+5. Créer un **raccourci bureau** vers `HammamDesktop.App.exe`
+6. L'employé se connecte avec son username/password → l'app détecte automatiquement son hammam
 
 ### Structure sur le PC client :
 
 ```
 📁 C:\Hammam\
-├── HammamDesktop.App.exe      ← L'application
+├── HammamDesktop.App.exe      ← L'application (~15-25 MB)
 ├── appsettings.json            ← Config (URL API du VPS)
 └── Lancer-Hammam.bat           ← Double-clic pour lancer
 ```
 
 ---
 
-## 3. Mises à jour automatiques (photos, prix, types tickets...)
+## 4. Mises à jour automatiques (photos, prix, types tickets...)
 
 **Il n'y a RIEN à faire côté desktop.** L'architecture sync automatiquement :
 
@@ -56,13 +74,13 @@ Sur chaque PC :
 
 ---
 
-## 4. Mise à jour de l'application (nouveau code)
+## 5. Mise à jour de l'application (nouveau code)
 
 Si vous modifiez le code desktop (bugs, nouvelles fonctionnalités) :
 
 ### Option A — Simple (recommandé pour 6 PCs)
 
-1. Republier avec `dotnet publish` (même commande que section 1)
+1. Republier avec `dotnet publish` (même commande que section 2)
 2. Envoyer le nouveau exe par **WhatsApp / email / clé USB**
 3. Le client remplace l'ancien fichier `HammamDesktop.App.exe`
 
@@ -76,7 +94,7 @@ Si vous modifiez le code desktop (bugs, nouvelles fonctionnalités) :
 
 ---
 
-## 5. Configuration réseau requise
+## 6. Configuration réseau requise
 
 Chaque PC a besoin de :
 
@@ -86,7 +104,7 @@ Chaque PC a besoin de :
 
 ---
 
-## 6. Résumé du processus
+## 7. Résumé du processus
 
 ```
 ┌─────────────────────────────────────────────────────┐

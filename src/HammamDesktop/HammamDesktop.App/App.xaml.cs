@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading;
 using System.Windows;
+using System.Windows.Media.Animation;
 using HammamDesktop.Services;
 using HammamDesktop.ViewModels;
 using HammamDesktop.Data;
@@ -99,6 +100,13 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // === Optimisations pour machines faibles ===
+        // Réduire le framerate des animations (60fps → 15fps)
+        Timeline.DesiredFrameRateProperty.OverrideMetadata(
+            typeof(Timeline),
+            new FrameworkPropertyMetadata { DefaultValue = 15 }
+        );
+
         // Vérifier qu'une seule instance tourne
         const string mutexName = "HammamPOS_SingleInstance";
         _mutex = new Mutex(true, mutexName, out bool isNewInstance);
