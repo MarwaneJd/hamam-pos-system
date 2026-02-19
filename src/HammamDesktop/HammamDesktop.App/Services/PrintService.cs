@@ -112,7 +112,7 @@ public class PrintService : IPrintService
                 // Configuration pour imprimante thermique 58mm
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Thermal58", 
                     (int)(PAPER_WIDTH_MM * 3.937), // Conversion mm en 1/100 pouces
-                    (int)(150 * 3.937)); // Hauteur estimée ~150mm (espace pour logo)
+                    (int)(200 * 3.937)); // Hauteur ~200mm pour contenu plus aéré
                 
                 printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
@@ -153,19 +153,22 @@ public class PrintService : IPrintService
         
         var arabicFamily = GetArabicFontFamily();
 
-        // Polices pour impression thermique
-        var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
-        var fontLarge = new Font("Segoe UI", 14, FontStyle.Bold);
-        var fontSmall = new Font("Segoe UI", 8, FontStyle.Regular);
-        var fontArabicTitle = new Font(arabicFamily, 20, FontStyle.Bold);
-        var fontArabicType = new Font(arabicFamily, 14, FontStyle.Bold);
-        var fontArabicSmall = new Font(arabicFamily, 10, FontStyle.Regular);
-        var fontArabicLabel = new Font(arabicFamily, 10, FontStyle.Regular);
+        // Polices plus grandes pour meilleure lisibilité sur thermique 58mm
+        var fontNormal = new Font("Segoe UI", 12, FontStyle.Regular);
+        var fontLarge = new Font("Segoe UI", 18, FontStyle.Bold);
+        var fontSmall = new Font("Segoe UI", 10, FontStyle.Regular);
+        var fontArabicTitle = new Font(arabicFamily, 24, FontStyle.Bold);
+        var fontArabicType = new Font(arabicFamily, 16, FontStyle.Bold);
+        var fontArabicSmall = new Font(arabicFamily, 11, FontStyle.Regular);
+        var fontArabicLabel = new Font(arabicFamily, 12, FontStyle.Bold);
 
-        float x = 5; // Marge gauche
-        float y = 5; // Position verticale
-        float lineHeight = 18;
-        float width = PRINTABLE_WIDTH_MM * 3.937f; // Largeur en points
+        // Centrage : utiliser toute la largeur du papier avec marges symétriques
+        float paperWidth = PAPER_WIDTH_MM * 3.937f; // Largeur totale en points
+        float margin = 8f; // Marge symétrique gauche/droite
+        float x = margin;
+        float y = 10; // Position de départ plus basse pour mieux centrer verticalement
+        float lineHeight = 24;
+        float width = paperWidth - (margin * 2); // Zone d'impression centrée
 
         var brush = Brushes.Black;
         var format = new StringFormat { Alignment = StringAlignment.Center };
@@ -183,14 +186,14 @@ public class PrintService : IPrintService
             try
             {
                 using var logo = Image.FromFile(_currentTicket.TypeTicketImagePath);
-                // Taille cible : ~110px de hauteur, proportionnel
-                float targetHeight = 110f;
+                // Taille cible : ~120px de hauteur, proportionnel
+                float targetHeight = 120f;
                 float scale = targetHeight / logo.Height;
                 float scaledWidth = logo.Width * scale;
                 float scaledHeight = targetHeight;
                 float logoX = x + (width - scaledWidth) / 2; // Centrer horizontalement
                 g.DrawImage(logo, logoX, y, scaledWidth, scaledHeight);
-                y += scaledHeight + 8;
+                y += scaledHeight + 12;
             }
             catch (Exception ex)
             {
@@ -203,8 +206,8 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         var arabicSize = g.MeasureString(hammamArabe, fontArabicTitle);
         g.DrawString(hammamArabe, fontArabicTitle, brush, 
-            new RectangleF(x, y, width, arabicSize.Height + 4), format);
-        y += arabicSize.Height + 6;
+            new RectangleF(x, y, width, arabicSize.Height + 6), format);
+        y += arabicSize.Height + 10;
 
         // ═══════════════════════════════════════
         // TYPE DE TICKET (nom affiché directement)
@@ -212,25 +215,25 @@ public class PrintService : IPrintService
         var typeName = _currentTicket.TypeTicket;
         var typeSize = g.MeasureString(typeName, fontArabicType);
         g.DrawString(typeName, fontArabicType, brush,
-            new RectangleF(x, y, width, typeSize.Height + 4), format);
-        y += typeSize.Height + 8;
+            new RectangleF(x, y, width, typeSize.Height + 6), format);
+        y += typeSize.Height + 14;
 
         // ═══════════════════════════════════════
         // NUMÉRO DE TICKET (label arabe)
         // ═══════════════════════════════════════
         var numberText = $"{_currentTicket.TicketNumber}  :  الرقم";
         g.DrawString(numberText, fontArabicLabel, brush,
-            new RectangleF(x, y, width, lineHeight + 2), format);
-        y += lineHeight + 6;
+            new RectangleF(x, y, width, lineHeight + 4), format);
+        y += lineHeight + 10;
 
         // ═══════════════════════════════════════
-        // PRIX (label arabe + valeur)
+        // PRIX (label arabe + valeur — bien visible)
         // ═══════════════════════════════════════
         var priceFormatted = _currentTicket.Prix.ToString("F2").Replace('.', ',');
         var priceText = $"{priceFormatted}  :  الثمن";
         g.DrawString(priceText, fontLarge, brush,
-            new RectangleF(x, y, width, lineHeight + 8), format);
-        y += lineHeight + 12;
+            new RectangleF(x, y, width, lineHeight + 12), format);
+        y += lineHeight + 20;
 
         // ═══════════════════════════════════════
         // DATE ET HEURE (sur une seule ligne)
@@ -238,14 +241,14 @@ public class PrintService : IPrintService
         var dateTimeLine = $"{_currentTicket.DateHeure:HH:mm}    {_currentTicket.DateHeure:dd/MM/yyyy}";
         g.DrawString(dateTimeLine, fontNormal, brush,
             new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight + 4;
+        y += lineHeight + 8;
 
         // ═══════════════════════════════════════
         // CAISSIER
         // ═══════════════════════════════════════
         g.DrawString($"Caissier : {_currentTicket.EmployeNom}", fontSmall, brush,
             new RectangleF(x, y, width, lineHeight), format);
-        y += lineHeight + 6;
+        y += lineHeight + 10;
 
         // ═══════════════════════════════════════
         // MESSAGE DE REMERCIEMENT EN ARABE
@@ -253,7 +256,7 @@ public class PrintService : IPrintService
         var merciArabe = "شكرا على زيارتكم";
         var merciSize = g.MeasureString(merciArabe, fontArabicSmall);
         g.DrawString(merciArabe, fontArabicSmall, brush,
-            new RectangleF(x, y, width, merciSize.Height + 4), format);
+            new RectangleF(x, y, width, merciSize.Height + 6), format);
 
         // Libérer les polices
         fontNormal.Dispose();
