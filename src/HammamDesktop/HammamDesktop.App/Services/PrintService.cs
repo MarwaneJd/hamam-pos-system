@@ -283,7 +283,7 @@ public class PrintService : IPrintService
                 // Configuration pour imprimante thermique 58mm
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Thermal58", 
                     (int)(PAPER_WIDTH_MM * 3.937),
-                    (int)(200 * 3.937)); // Même hauteur que ticket de vente
+                    (int)(350 * 3.937)); // Hauteur ~350mm pour lignes d'écriture
                 
                 printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
@@ -311,9 +311,9 @@ public class PrintService : IPrintService
         // Mêmes polices que le ticket de vente
         var arabicFamily = GetArabicFontFamily();
         var fontArabicTitle = new Font(arabicFamily, 19, FontStyle.Bold);
-        var fontLarge = new Font("Segoe UI", 14, FontStyle.Bold);
+        var fontLarge = new Font("Segoe UI", 16, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
-        var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
+        var fontSmall = new Font("Segoe UI", 10, FontStyle.Regular);
 
         // Mêmes marges et dimensions que le ticket de vente
         float paperWidth = PAPER_WIDTH_MM * 3.937f;
@@ -372,11 +372,11 @@ public class PrintService : IPrintService
         g.DrawLine(pen, x, y, x + width, y);
         y += 12;
 
-        // Espace pour écriture manuelle (lignes en pointillés)
-        for (int i = 0; i < 4; i++)
+        // Espace pour écriture manuelle (lignes en pointillés) - ~8cm supplémentaires
+        for (int i = 0; i < 16; i++)
         {
             g.DrawString("_ _ _ _ _ _ _ _ _ _ _ _ _ _ _", fontSmall, brush,
-                new RectangleF(x, y, width, 20), centerFormat);
+                new RectangleF(x, y, width, 22), centerFormat);
             y += 25;
         }
 
