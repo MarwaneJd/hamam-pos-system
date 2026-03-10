@@ -310,7 +310,7 @@ public class PrintService : IPrintService
         
         // Mêmes polices que le ticket de vente
         var arabicFamily = GetArabicFontFamily();
-        var fontArabicTitle = new Font(arabicFamily, 19, FontStyle.Bold);
+        var fontArabicTitle = new Font(arabicFamily, 24, FontStyle.Bold);
         var fontLarge = new Font("Segoe UI", 16, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontSmall = new Font("Segoe UI", 10, FontStyle.Regular);

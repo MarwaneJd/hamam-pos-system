@@ -176,89 +176,91 @@
                     <DataTemplate>
                         <Button Command="{Binding DataContext.SellTicketCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}"
-                                Width="420" Height="180"
-                                Margin="10"
-                                Cursor="Hand">
+                                Margin="8"
+                                Cursor="Hand"
+                                HorizontalAlignment="Stretch">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="border"
-                                            Background="{StaticResource CardBackground}"
-                                            BorderBrush="{StaticResource BorderColor}"
+                                            Background="#2563EB"
+                                            BorderBrush="#1D4ED8"
                                             BorderThickness="2"
-                                            CornerRadius="20"
-                                            ClipToBounds="True">
+                                            CornerRadius="16"
+                                            ClipToBounds="True"
+                                            MinHeight="130">
                                         <Border.Effect>
-                                            <DropShadowEffect BlurRadius="20" 
-                                                              ShadowDepth="0"
-                                                              Opacity="0.4"
+                                            <DropShadowEffect BlurRadius="15" 
+                                                              ShadowDepth="2"
+                                                              Opacity="0.3"
                                                               Color="Black"/>
                                         </Border.Effect>
-                                        <Grid Margin="20" VerticalAlignment="Center">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
-                                            </Grid.RowDefinitions>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
 
-                                            <!-- Icône ou Image -->
-                                            <Border Grid.Row="0"
-                                                    Width="70" Height="70"
-                                                    CornerRadius="35"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Margin="0,5,0,10">
-                                                <Border.Background>
-                                                    <SolidColorBrush Color="{Binding Couleur}" Opacity="0.2"/>
-                                                </Border.Background>
+                                            <!-- Partie gauche : Nom + prix -->
+                                            <Grid Grid.Column="0" Margin="20,15" VerticalAlignment="Center">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Nom du produit (arabe) -->
+                                                <TextBlock Grid.Row="0"
+                                                           Text="{Binding Nom}"
+                                                           FontSize="26" FontWeight="Bold"
+                                                           Foreground="White"
+                                                           HorizontalAlignment="Left"
+                                                           FlowDirection="RightToLeft"
+                                                           Margin="0,0,0,8"/>
+
+                                                <!-- Prix -->
+                                                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left">
+                                                    <TextBlock Text="{Binding Prix, StringFormat={}{0:0.00}}" 
+                                                               FontSize="28" FontWeight="Bold"
+                                                               Foreground="#FDE047"/>
+                                                    <TextBlock Text=" DH" 
+                                                               FontSize="16"
+                                                               Foreground="#FDE047"
+                                                               Opacity="0.8"
+                                                               VerticalAlignment="Bottom"
+                                                               Margin="0,0,0,3"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <!-- Partie droite : Image -->
+                                            <Border Grid.Column="1"
+                                                    Width="110" Height="110"
+                                                    Margin="10,10,15,10"
+                                                    CornerRadius="12"
+                                                    Background="White"
+                                                    ClipToBounds="True"
+                                                    VerticalAlignment="Center">
                                                 <Grid>
                                                     <!-- Image uploadée (prioritaire) -->
-                                                    <Border CornerRadius="35" ClipToBounds="True"
+                                                    <Border ClipToBounds="True" CornerRadius="12"
                                                             Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}}">
                                                         <Image Source="{Binding LocalImagePath, Converter={StaticResource ImagePathConverter}}"
                                                                Stretch="UniformToFill"
-                                                               Width="70" Height="70"/>
+                                                               Width="110" Height="110"/>
                                                     </Border>
                                                     <!-- Fallback: Icône MaterialDesign -->
                                                     <materialDesign:PackIcon Kind="{Binding Icone, Converter={StaticResource IconNameToKindConverter}}"
-                                                                             Width="38" Height="38"
+                                                                             Width="50" Height="50"
                                                                              HorizontalAlignment="Center"
                                                                              VerticalAlignment="Center"
-                                                                             Visibility="{Binding LocalImagePath, Converter={StaticResource NoImageToVisibilityConverter}}">
-                                                        <materialDesign:PackIcon.Foreground>
-                                                            <SolidColorBrush Color="{Binding Couleur}"/>
-                                                        </materialDesign:PackIcon.Foreground>
-                                                    </materialDesign:PackIcon>
+                                                                             Foreground="#2563EB"
+                                                                             Visibility="{Binding LocalImagePath, Converter={StaticResource NoImageToVisibilityConverter}}"/>
                                                 </Grid>
                                             </Border>
-
-                                            <TextBlock Grid.Row="1"
-                                                       Text="{Binding Nom}"
-                                                       FontSize="20" FontWeight="Bold"
-                                                       HorizontalAlignment="Center"
-                                                       Foreground="{StaticResource TextPrimary}"
-                                                       Margin="0,5,0,5"/>
-
-                                            <!-- Prix -->
-                                            <TextBlock Grid.Row="2"
-                                                       HorizontalAlignment="Center"
-                                                       Margin="0,5,0,10">
-                                                <Run Text="{Binding Prix, StringFormat={}{0:0}}" 
-                                                     FontSize="26" FontWeight="Bold"
-                                                     Foreground="#4ADE80"/>
-                                                <Run Text=" DH" 
-                                                     FontSize="14"
-                                                     Foreground="{StaticResource TextSecondary}"/>
-                                            </TextBlock>
                                         </Grid>
                                     </Border>
 
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="border" Property="BorderBrush">
-                                                <Setter.Value>
-                                                    <SolidColorBrush Color="{Binding Couleur}"/>
-                                                </Setter.Value>
-                                            </Setter>
+                                            <Setter TargetName="border" Property="Background" Value="#1D4ED8"/>
                                             <Setter TargetName="border" Property="RenderTransform">
                                                 <Setter.Value>
                                                     <ScaleTransform ScaleX="1.02" ScaleY="1.02"/>
@@ -266,6 +268,7 @@
                                             </Setter>
                                         </Trigger>
                                         <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="border" Property="Background" Value="#1E40AF"/>
                                             <Setter TargetName="border" Property="RenderTransform">
                                                 <Setter.Value>
                                                     <ScaleTransform ScaleX="0.98" ScaleY="0.98"/>
