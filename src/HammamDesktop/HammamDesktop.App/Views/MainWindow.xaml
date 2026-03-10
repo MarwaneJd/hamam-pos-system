@@ -176,9 +176,9 @@
                     <DataTemplate>
                         <Button Command="{Binding DataContext.SellTicketCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}"
+                                Width="480" Height="140"
                                 Margin="8"
-                                Cursor="Hand"
-                                HorizontalAlignment="Stretch">
+                                Cursor="Hand">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="border"
@@ -186,8 +186,7 @@
                                             BorderBrush="#1D4ED8"
                                             BorderThickness="2"
                                             CornerRadius="16"
-                                            ClipToBounds="True"
-                                            MinHeight="130">
+                                            ClipToBounds="True">
                                         <Border.Effect>
                                             <DropShadowEffect BlurRadius="15" 
                                                               ShadowDepth="2"
