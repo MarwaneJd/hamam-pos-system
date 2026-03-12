@@ -283,7 +283,7 @@ public class PrintService : IPrintService
                 // Configuration pour imprimante thermique 58mm
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Thermal58", 
                     (int)(PAPER_WIDTH_MM * 3.937),
-                    (int)(350 * 3.937)); // Hauteur ~350mm pour lignes d'écriture
+                    (int)(320 * 3.937)); // Hauteur ~320mm (réduit de 3cm)
                 
                 printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 

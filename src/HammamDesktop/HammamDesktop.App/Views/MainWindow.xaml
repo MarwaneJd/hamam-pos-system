@@ -242,7 +242,7 @@
                                                     <Border ClipToBounds="True" CornerRadius="12"
                                                             Visibility="{Binding LocalImagePath, Converter={StaticResource HasImageToVisibilityConverter}}">
                                                         <Image Source="{Binding LocalImagePath, Converter={StaticResource ImagePathConverter}}"
-                                                               Stretch="UniformToFill"
+                                                               Stretch="Uniform"
                                                                Width="110" Height="110"/>
                                                     </Border>
                                                     <!-- Fallback: Icône MaterialDesign -->
