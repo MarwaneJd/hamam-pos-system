@@ -1,7 +1,7 @@
 using HammamAPI.Application.DTOs;
 using HammamAPI.Application.Services;
+using HammamAPI.Domain.Entities;
 using HammamAPI.Domain.Interfaces;
-
 namespace HammamAPI.Application.Services.Implementations;
 
 /// <summary>
@@ -65,11 +65,12 @@ public class StatsService : IStatsService
         var hammams = await _hammamRepository.GetAllActiveAsync();
         var hammamsActifs = hammams.Count();
 
-        // Stats par hammam
-        var hammamStats = await GetHammamStatsAsync(fromDate, toDate);
+        // Stats par hammam (en passant les tickets déjà chargés en mémoire)
+        var hammamStats = await GetHammamStatsInternalAsync(fromDate, toDate, hammams, ticketsList);
 
-        // Stats par employé (classement)
-        var employeStats = await GetEmployeStatsAsync(fromDate, toDate);
+        // Stats par employé (en passant les tickets déjà chargés en mémoire)
+        var employes = await _employeRepository.GetAllActiveAsync();
+        var employeStats = GetEmployeStatsInternal(employes, ticketsList);
 
         return new DashboardStatsDto(
             TotalTicketsToday: totalTickets,
@@ -88,15 +89,20 @@ public class StatsService : IStatsService
     public async Task<IEnumerable<HammamStatsDto>> GetHammamStatsAsync(DateTime from, DateTime to)
     {
         var hammams = await _hammamRepository.GetAllActiveAsync();
+        var tickets = await _ticketRepository.GetByDateRangeAsync(from, to);
+        return await GetHammamStatsInternalAsync(from, to, hammams, tickets.ToList());
+    }
+
+    private async Task<IEnumerable<HammamStatsDto>> GetHammamStatsInternalAsync(DateTime from, DateTime to, IEnumerable<Hammam> hammams, List<Ticket> ticketsList)
+    {
         var stats = new List<HammamStatsDto>();
 
         foreach (var hammam in hammams)
         {
-            var tickets = await _ticketRepository.GetByHammamIdAsync(hammam.Id, from, to);
-            var ticketsList = tickets.ToList();
+            var hammamTickets = ticketsList.Where(t => t.HammamId == hammam.Id).ToList();
 
-            var ticketsCount = ticketsList.Count;
-            var revenue = ticketsList.Sum(t => t.Prix); // Montant théorique (ce que les employés devraient remettre)
+            var ticketsCount = hammamTickets.Count;
+            var revenue = hammamTickets.Sum(t => t.Prix); // Montant théorique (ce que les employés devraient remettre)
 
             // Récupérer le total des versements (montants remis par les employés)
             var totalRemis = await _versementRepository.GetTotalRemisAsync(hammam.Id, from, to);
@@ -130,19 +136,24 @@ public class StatsService : IStatsService
     public async Task<IEnumerable<EmployeStatsDto>> GetEmployeStatsAsync(DateTime from, DateTime to)
     {
         var employes = await _employeRepository.GetAllActiveAsync();
+        var tickets = await _ticketRepository.GetByDateRangeAsync(from, to);
+        return GetEmployeStatsInternal(employes, tickets.ToList());
+    }
+
+    private IEnumerable<EmployeStatsDto> GetEmployeStatsInternal(IEnumerable<Employe> employes, List<Ticket> ticketsList)
+    {
         var stats = new List<EmployeStatsDto>();
 
         foreach (var employe in employes)
         {
-            var tickets = await _ticketRepository.GetByEmployeIdAsync(employe.Id, from, to);
-            var ticketsList = tickets.ToList();
+            var employeTickets = ticketsList.Where(t => t.EmployeId == employe.Id).ToList();
 
             stats.Add(new EmployeStatsDto(
                 EmployeId: employe.Id,
                 EmployeNom: $"{employe.Prenom} {employe.Nom}",
                 HammamNom: employe.Hammam?.Nom ?? "",
-                TicketsCount: ticketsList.Count,
-                Revenue: ticketsList.Sum(t => t.Prix),
+                TicketsCount: employeTickets.Count,
+                Revenue: employeTickets.Sum(t => t.Prix),
                 Classement: 0 // Sera calculé après le tri
             ));
         }

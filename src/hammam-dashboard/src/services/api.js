@@ -60,6 +60,18 @@ api.interceptors.response.use(
     }
 )
 
+// ==================== CACHE ====================
+// Cache en mémoire pour accélérer la navigation entre pages
+const apiCache = {
+    employes: null,
+    hammams: null
+}
+
+export const clearApiCache = () => {
+    apiCache.employes = null
+    apiCache.hammams = null
+}
+
 // ==================== AUTH SERVICE ====================
 
 export const authService = {
@@ -142,8 +154,12 @@ export const employesService = {
     /**
      * Récupérer tous les employés
      */
-    getAll: async () => {
+    getAll: async (forceRefresh = false) => {
+        if (!forceRefresh && apiCache.employes) {
+            return apiCache.employes
+        }
         const response = await api.get('/employes')
+        apiCache.employes = response.data
         return response.data
     },
 
@@ -168,6 +184,7 @@ export const employesService = {
      */
     create: async (data) => {
         const response = await api.post('/employes', data)
+        apiCache.employes = null // Invalider cache
         return response.data
     },
 
@@ -176,6 +193,7 @@ export const employesService = {
      */
     update: async (id, data) => {
         const response = await api.put(`/employes/${id}`, data)
+        apiCache.employes = null // Invalider cache
         return response.data
     },
 
@@ -184,6 +202,7 @@ export const employesService = {
      */
     delete: async (id) => {
         const response = await api.delete(`/employes/${id}`)
+        apiCache.employes = null // Invalider cache
         return response.data
     },
 
@@ -200,6 +219,7 @@ export const employesService = {
      */
     toggleStatus: async (id) => {
         const response = await api.patch(`/employes/${id}/toggle-status`)
+        apiCache.employes = null // Invalider cache
         return response.data
     },
 }
@@ -210,8 +230,12 @@ export const hammamsService = {
     /**
      * Récupérer tous les hammams
      */
-    getAll: async () => {
+    getAll: async (forceRefresh = false) => {
+        if (!forceRefresh && apiCache.hammams) {
+            return apiCache.hammams
+        }
         const response = await api.get('/hammams')
+        apiCache.hammams = response.data
         return response.data
     },
 
@@ -228,6 +252,7 @@ export const hammamsService = {
      */
     create: async (data) => {
         const response = await api.post('/hammams', data)
+        apiCache.hammams = null // Invalider cache
         return response.data
     },
 
@@ -236,6 +261,7 @@ export const hammamsService = {
      */
     update: async (id, data) => {
         const response = await api.put(`/hammams/${id}`, data)
+        apiCache.hammams = null // Invalider cache
         return response.data
     },
 
@@ -244,6 +270,7 @@ export const hammamsService = {
      */
     delete: async (id) => {
         const response = await api.delete(`/hammams/${id}`)
+        apiCache.hammams = null // Invalider cache
         return response.data
     },
 
@@ -252,6 +279,7 @@ export const hammamsService = {
      */
     toggleStatus: async (id) => {
         const response = await api.patch(`/hammams/${id}/toggle-status`)
+        apiCache.hammams = null // Invalider cache
         return response.data
     },
 }
