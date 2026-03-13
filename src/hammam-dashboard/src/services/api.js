@@ -260,6 +260,20 @@ export const hammamsService = {
 
 export const ticketsService = {
     /**
+     * Récupérer tous les tickets avec filtres
+     */
+    getAll: async (hammamId = null, employeId = null, from = null, to = null) => {
+        const params = {}
+        if (hammamId) params.hammamId = hammamId
+        if (employeId) params.employeId = employeId
+        if (from) params.from = from
+        if (to) params.to = to
+
+        const response = await api.get('/tickets', { params })
+        return response.data
+    },
+
+    /**
      * Récupérer les tickets d'un hammam
      */
     getByHammam: async (hammamId, from = null, to = null) => {

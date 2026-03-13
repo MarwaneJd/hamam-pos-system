@@ -7,6 +7,7 @@ import EmployesPage from './pages/EmployesPage'
 import HammamsPage from './pages/HammamsPage'
 import RapportsPage from './pages/RapportsPage'
 import ComptabilitePage from './pages/ComptabilitePage'
+import TicketsPage from './pages/TicketsPage'
 import LoadingSpinner from './components/LoadingSpinner'
 
 /**
@@ -69,6 +70,7 @@ function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="employes" element={<EmployesPage />} />
                 <Route path="hammams" element={<HammamsPage />} />
+                <Route path="tickets" element={<TicketsPage />} />
                 <Route path="comptabilite" element={<ComptabilitePage />} />
                 <Route path="rapports" element={<RapportsPage />} />
             </Route>

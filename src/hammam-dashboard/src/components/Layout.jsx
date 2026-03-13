@@ -10,6 +10,7 @@ import {
     X,
     Bath,
     Calculator,
+    Ticket,
     KeyRound,
     Eye,
     EyeOff,
@@ -44,6 +45,7 @@ export default function Layout() {
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Employés', href: '/employes', icon: Users },
         { name: 'Hammams', href: '/hammams', icon: Building2 },
+        { name: 'Tickets', href: '/tickets', icon: Ticket },
         { name: 'Comptabilité', href: '/comptabilite', icon: Calculator },
         { name: 'Rapports', href: '/rapports', icon: FileBarChart },
     ]
@@ -215,7 +217,7 @@ export default function Layout() {
                 </header>
 
                 {/* Page content */}
-                <div className="p-6 lg:p-8">
+                <div className="p-4 sm:p-6 lg:p-8">
                     <Outlet />
                 </div>
             </main>

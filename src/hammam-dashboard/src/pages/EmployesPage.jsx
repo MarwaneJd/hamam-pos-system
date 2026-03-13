@@ -264,9 +264,9 @@ export default function EmployesPage() {
                         <thead>
                             <tr>
                                 <th>Employé</th>
-                                <th>Username</th>
+                                <th className="hidden sm:table-cell">Username</th>
                                 <th>Hammam</th>
-                                <th>Langue</th>
+                                <th className="hidden md:table-cell">Langue</th>
                                 <th>Statut</th>
                                 <th className="text-right">Actions</th>
                             </tr>
@@ -275,19 +275,19 @@ export default function EmployesPage() {
                             {filteredEmployes.map((employe) => (
                                 <tr key={employe.id}>
                                     <td>
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-accent-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                        <div className="flex items-center gap-2 sm:gap-3">
+                                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-primary-500 to-accent-500 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0">
                                                 {employe.prenom[0]}{employe.nom[0]}
                                             </div>
-                                            <div>
-                                                <p className="font-medium text-white">{employe.prenom} {employe.nom}</p>
-                                                <p className="text-xs text-slate-400">{employe.role}</p>
+                                            <div className="min-w-0">
+                                                <p className="font-medium text-white text-sm truncate">{employe.prenom} {employe.nom}</p>
+                                                <p className="text-xs text-slate-400 sm:hidden">{employe.username}</p>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="font-mono text-sm">{employe.username}</td>
-                                    <td>{employe.hammamNom}</td>
-                                    <td>
+                                    <td className="font-mono text-sm hidden sm:table-cell">{employe.username}</td>
+                                    <td className="text-sm">{employe.hammamNom}</td>
+                                    <td className="hidden md:table-cell">
                                         <span className="badge badge-primary">
                                             {employe.langue === 'FR' ? '🇫🇷 Français' : '🇲🇦 Arabe'}
                                         </span>

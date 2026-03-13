@@ -283,7 +283,7 @@ public class PrintService : IPrintService
                 // Configuration pour imprimante thermique 58mm
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Thermal58", 
                     (int)(PAPER_WIDTH_MM * 3.937),
-                    (int)(320 * 3.937)); // Hauteur ~320mm (réduit de 3cm)
+                    (int)(240 * 3.937)); // Hauteur ~240mm (réduit de ~8cm)
                 
                 printDoc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
@@ -308,22 +308,28 @@ public class PrintService : IPrintService
         
         Log.Information("Impression clôture - NomArabe: {NomArabe}", _currentCloture.HammamNomArabe);
         
-        // Mêmes polices que le ticket de vente
+        // Polices
         var arabicFamily = GetArabicFontFamily();
         var fontArabicTitle = new Font(arabicFamily, 24, FontStyle.Bold);
+        var fontArabicName = new Font(arabicFamily, 16, FontStyle.Bold);
         var fontLarge = new Font("Segoe UI", 16, FontStyle.Bold);
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontSmall = new Font("Segoe UI", 10, FontStyle.Regular);
 
-        // Mêmes marges et dimensions que le ticket de vente
+        // Centrage amélioré avec marges symétriques
         float paperWidth = PAPER_WIDTH_MM * 3.937f;
-        float margin = 6f;
+        float margin = 8f;
         float x = margin;
-        float y = 6;
+        float y = 8;
         float width = paperWidth - (margin * 2);
 
         var brush = Brushes.Black;
         var centerFormat = new StringFormat { Alignment = StringAlignment.Center };
+        // Format RTL pour le texte arabe
+        var rtlCenterFormat = new StringFormat { 
+            Alignment = StringAlignment.Center,
+            FormatFlags = StringFormatFlags.DirectionRightToLeft
+        };
 
         // ═══════════════════════════════════════
         // NOM DU HAMMAM EN ARABE (gros, centré)
@@ -335,13 +341,15 @@ public class PrintService : IPrintService
         }
         
         var arabicSize = g.MeasureString(arabicName, fontArabicTitle);
+        float arabicX = x + (width - arabicSize.Width) / 2;
         g.DrawString(arabicName, fontArabicTitle, brush, 
-            new RectangleF(x, y, width, arabicSize.Height + 4), centerFormat);
+            new RectangleF(x, y, width, arabicSize.Height + 4), rtlCenterFormat);
         y += arabicSize.Height + 5;
 
         // Ligne de séparation
         using var pen = new Pen(Color.Black, 1.5f);
-        g.DrawLine(pen, x, y, x + width, y);
+        float lineMargin = 4f;
+        g.DrawLine(pen, x + lineMargin, y, x + width - lineMargin, y);
         y += 10;
 
         // ═══════════════════════════════════════
@@ -349,9 +357,13 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         g.DrawString("Caissier", fontNormal, brush,
             new RectangleF(x, y, width, 20), centerFormat);
-        y += 22;
-        g.DrawString(_currentCloture.CaissierNom.ToUpper(), fontLarge, brush,
-            new RectangleF(x, y, width, 26), centerFormat);
+        y += 20;
+
+        // Nom du caissier — utiliser la police arabe avec format RTL
+        // pour que les caractères arabes se lient correctement
+        var caissierNom = _currentCloture.CaissierNom.ToUpper();
+        g.DrawString(caissierNom, fontArabicName, brush,
+            new RectangleF(x, y, width, 26), rtlCenterFormat);
         y += 28;
 
         // ═══════════════════════════════════════
@@ -369,11 +381,11 @@ public class PrintService : IPrintService
         y += 30;
 
         // Ligne de séparation
-        g.DrawLine(pen, x, y, x + width, y);
+        g.DrawLine(pen, x + lineMargin, y, x + width - lineMargin, y);
         y += 12;
 
-        // Espace pour écriture manuelle (lignes en pointillés) - ~8cm supplémentaires
-        for (int i = 0; i < 16; i++)
+        // Espace pour écriture manuelle (lignes en pointillés) - réduit à 10 lignes
+        for (int i = 0; i < 10; i++)
         {
             g.DrawString("_ _ _ _ _ _ _ _ _ _ _ _ _ _ _", fontSmall, brush,
                 new RectangleF(x, y, width, 22), centerFormat);
@@ -382,6 +394,7 @@ public class PrintService : IPrintService
 
         // Libérer les polices
         fontArabicTitle.Dispose();
+        fontArabicName.Dispose();
         fontLarge.Dispose();
         fontNormal.Dispose();
         fontSmall.Dispose();

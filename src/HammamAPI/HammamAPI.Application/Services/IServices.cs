@@ -48,6 +48,7 @@ public interface IHammamService
 public interface ITicketService
 {
     Task<TicketDto?> GetByIdAsync(Guid id);
+    Task<IEnumerable<TicketDto>> GetAllAsync(Guid? hammamId = null, Guid? employeId = null, DateTime? from = null, DateTime? to = null);
     Task<IEnumerable<TicketDto>> GetByHammamAsync(Guid hammamId, DateTime? from = null, DateTime? to = null);
     Task<IEnumerable<TicketDto>> GetByEmployeAsync(Guid employeId, DateTime? from = null, DateTime? to = null);
     Task<TicketDto> CreateAsync(CreateTicketRequest request);

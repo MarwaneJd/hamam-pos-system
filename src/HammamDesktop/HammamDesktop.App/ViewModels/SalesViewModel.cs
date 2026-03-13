@@ -233,6 +233,9 @@ public partial class SalesViewModel : ObservableObject
                 "hammame liberte" => "حمام الحرية",
                 "hammam centre" => "حمام الوسط",
                 "hammam casablanca" => "حمام الدار البيضاء",
+                "hammam lasseif" => "حمام لاسميف",
+                "hammam lassif" => "حمام لاسميف",
+                "hammam lassmif" => "حمام لاسميف",
                 _ => HammamNomArabe
             };
 

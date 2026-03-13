@@ -23,6 +23,20 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
+    /// Récupère tous les tickets avec filtres optionnels
+    /// </summary>
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<TicketDto>>> GetAll(
+        [FromQuery] Guid? hammamId = null,
+        [FromQuery] Guid? employeId = null,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null)
+    {
+        var tickets = await _ticketService.GetAllAsync(hammamId, employeId, from, to);
+        return Ok(tickets);
+    }
+
+    /// <summary>
     /// Récupère un ticket par son ID
     /// </summary>
     [HttpGet("{id:guid}")]

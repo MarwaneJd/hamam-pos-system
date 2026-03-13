@@ -33,6 +33,48 @@ public class TicketService : ITicketService
         return ticket == null ? null : MapToDto(ticket);
     }
 
+    public async Task<IEnumerable<TicketDto>> GetAllAsync(Guid? hammamId = null, Guid? employeId = null, DateTime? from = null, DateTime? to = null)
+    {
+        // Si un hammamId est spécifié et un employeId aussi, filtrer par les deux
+        if (hammamId.HasValue && employeId.HasValue)
+        {
+            var hammamTickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, from, to);
+            return hammamTickets
+                .Where(t => t.EmployeId == employeId.Value)
+                .Select(MapToDto);
+        }
+
+        if (hammamId.HasValue)
+        {
+            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, from, to);
+            return tickets.Select(MapToDto);
+        }
+
+        if (employeId.HasValue)
+        {
+            var tickets = await _ticketRepository.GetByEmployeIdAsync(employeId.Value, from, to);
+            return tickets.Select(MapToDto);
+        }
+
+        // Pas de filtre spécifique, utiliser la plage de dates
+        if (from.HasValue && to.HasValue)
+        {
+            var tickets = await _ticketRepository.GetByDateRangeAsync(from.Value, to.Value);
+            return tickets.Select(MapToDto);
+        }
+
+        // Par défaut, tickets d'aujourd'hui
+        var moroccoOffset = TimeSpan.FromHours(1);
+        var nowUtc = DateTime.UtcNow;
+        var nowLocal = nowUtc + moroccoOffset;
+        var todayLocalStart = nowLocal.Date;
+        var todayUtcStart = todayLocalStart - moroccoOffset;
+        var tomorrowUtcStart = todayUtcStart.AddDays(1);
+        
+        var todayTickets = await _ticketRepository.GetByDateRangeAsync(todayUtcStart, tomorrowUtcStart);
+        return todayTickets.Select(MapToDto);
+    }
+
     public async Task<IEnumerable<TicketDto>> GetByHammamAsync(Guid hammamId, DateTime? from = null, DateTime? to = null)
     {
         var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId, from, to);
@@ -140,43 +182,53 @@ public class TicketService : ITicketService
 
     public async Task<int> GetTodayCountAsync(Guid? hammamId = null, Guid? employeId = null)
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
+        // Fuseau horaire du Maroc (UTC+1)
+        var moroccoOffset = TimeSpan.FromHours(1);
+        var nowUtc = DateTime.UtcNow;
+        var nowLocal = nowUtc + moroccoOffset;
+        var todayLocalStart = nowLocal.Date;
+        var todayUtcStart = todayLocalStart - moroccoOffset;
+        var tomorrowUtcStart = todayUtcStart.AddDays(1);
 
         if (hammamId.HasValue)
         {
-            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, today, tomorrow);
+            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, todayUtcStart, tomorrowUtcStart);
             return tickets.Count();
         }
 
         if (employeId.HasValue)
         {
-            var tickets = await _ticketRepository.GetByEmployeIdAsync(employeId.Value, today, tomorrow);
+            var tickets = await _ticketRepository.GetByEmployeIdAsync(employeId.Value, todayUtcStart, tomorrowUtcStart);
             return tickets.Count();
         }
 
-        var allTickets = await _ticketRepository.GetByDateRangeAsync(today, tomorrow);
+        var allTickets = await _ticketRepository.GetByDateRangeAsync(todayUtcStart, tomorrowUtcStart);
         return allTickets.Count();
     }
 
     public async Task<decimal> GetTodayRevenueAsync(Guid? hammamId = null, Guid? employeId = null)
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
+        // Fuseau horaire du Maroc (UTC+1)
+        var moroccoOffset = TimeSpan.FromHours(1);
+        var nowUtc = DateTime.UtcNow;
+        var nowLocal = nowUtc + moroccoOffset;
+        var todayLocalStart = nowLocal.Date;
+        var todayUtcStart = todayLocalStart - moroccoOffset;
+        var tomorrowUtcStart = todayUtcStart.AddDays(1);
 
         if (hammamId.HasValue)
         {
-            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, today, tomorrow);
+            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value, todayUtcStart, tomorrowUtcStart);
             return tickets.Sum(t => t.Prix);
         }
 
         if (employeId.HasValue)
         {
-            var tickets = await _ticketRepository.GetByEmployeIdAsync(employeId.Value, today, tomorrow);
+            var tickets = await _ticketRepository.GetByEmployeIdAsync(employeId.Value, todayUtcStart, tomorrowUtcStart);
             return tickets.Sum(t => t.Prix);
         }
 
-        var allTickets = await _ticketRepository.GetByDateRangeAsync(today, tomorrow);
+        var allTickets = await _ticketRepository.GetByDateRangeAsync(todayUtcStart, tomorrowUtcStart);
         return allTickets.Sum(t => t.Prix);
     }
 

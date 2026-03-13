@@ -22,6 +22,7 @@ public interface ITicketService
     Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync();
     Task CreateTicketAsync(LocalTicket ticket);
     Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId);
+    Task<int> GetTodayCountFromServerAsync(Guid hammamId);
     Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
     Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
 }
@@ -372,16 +373,67 @@ public class TicketService : ITicketService
 
     public async Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId)
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
+        // Fuseau horaire du Maroc (UTC+1)
+        // Calculer les bornes du jour local en UTC
+        var moroccoOffset = TimeSpan.FromHours(1);
+        var nowUtc = DateTime.UtcNow;
+        var nowLocal = nowUtc + moroccoOffset;
+        var todayLocalStart = nowLocal.Date;
+        // Convertir les bornes locales en UTC
+        var todayUtcStart = todayLocalStart - moroccoOffset;
+        var tomorrowUtcStart = todayUtcStart.AddDays(1);
 
         var tickets = await _db.Tickets
             .Where(t => t.HammamId == hammamId && 
-                        t.CreatedAt >= today && 
-                        t.CreatedAt < tomorrow)
+                        t.CreatedAt >= todayUtcStart && 
+                        t.CreatedAt < tomorrowUtcStart)
             .ToListAsync();
 
+        // Si aucun ticket local trouvé, essayer de récupérer le compteur du serveur
+        if (tickets.Count == 0)
+        {
+            try
+            {
+                var serverCount = await GetTodayCountFromServerAsync(hammamId);
+                if (serverCount > 0)
+                {
+                    Serilog.Log.Information(
+                        "Compteur local vide, utilisation du compteur serveur: {Count}", serverCount);
+                    return (serverCount, 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Debug(ex, "Impossible de récupérer le compteur serveur, utilisation du local");
+            }
+        }
+
         return (tickets.Count, tickets.Sum(t => t.Prix));
+    }
+
+    public async Task<int> GetTodayCountFromServerAsync(Guid hammamId)
+    {
+        try
+        {
+            var session = await _db.Sessions.FirstOrDefaultAsync();
+            if (session == null) return 0;
+
+            var client = _httpClientFactory.CreateClient("HammamApi");
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+
+            var response = await client.GetAsync($"api/tickets/count/today?hammamId={hammamId}");
+            if (response.IsSuccessStatusCode)
+            {
+                var count = await response.Content.ReadFromJsonAsync<int>();
+                return count;
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur serveur");
+        }
+        return 0;
     }
 
     public async Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100)
