@@ -46,6 +46,7 @@ services:
       - "8080:8080"
     volumes:
       - api_logs:/app/logs
+      - api_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -71,4 +72,6 @@ volumes:
   postgres_data:
     driver: local
   api_logs:
+    driver: local
+  api_uploads:
     driver: local
