@@ -153,20 +153,20 @@ public class PrintService : IPrintService
         
         var arabicFamily = GetArabicFontFamily();
 
-        // Polices — tailles ajustées pour correspondre au ticket client (photo référence)
+        // Polices — tailles agrandies pour correspondre à l'ancien système du client
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontPrixLabel = new Font("Segoe UI", 14, FontStyle.Bold);
-        var fontPrixValue = new Font("Segoe UI", 16, FontStyle.Bold);
+        var fontPrixValue = new Font("Segoe UI", 18, FontStyle.Bold);
         var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
-        var fontArabicTitle = new Font(arabicFamily, 19, FontStyle.Bold);
-        var fontArabicType = new Font(arabicFamily, 13, FontStyle.Bold);
-        var fontArabicSmall = new Font(arabicFamily, 10, FontStyle.Regular);
+        var fontArabicTitle = new Font(arabicFamily, 24, FontStyle.Bold);   // 19→24 : plus gros comme l'ancien
+        var fontArabicType = new Font(arabicFamily, 17, FontStyle.Bold);    // 13→17 : plus gros comme l'ancien
+        var fontArabicSmall = new Font(arabicFamily, 11, FontStyle.Regular);
 
         // Centrage : utiliser toute la largeur du papier avec marges symétriques
         float paperWidth = PAPER_WIDTH_MM * 3.937f;
         float margin = 6f;
         float x = margin;
-        float y = 8;
+        float y = 6;
         float width = paperWidth - (margin * 2);
 
         var brush = Brushes.Black;
@@ -185,11 +185,11 @@ public class PrintService : IPrintService
             try
             {
                 using var logo = Image.FromFile(_currentTicket.TypeTicketImagePath);
-                float targetHeight = 90f;
+                float targetHeight = 95f;  // Légèrement plus grand
                 float scale = targetHeight / logo.Height;
                 float scaledWidth = logo.Width * scale;
                 float scaledHeight = targetHeight;
-                float logoX = x + (width - scaledWidth) / 2;
+                float logoX = x + (width - scaledWidth) / 2; // Centrer parfaitement
                 g.DrawImage(logo, logoX, y, scaledWidth, scaledHeight);
                 y += scaledHeight + 5;
             }
@@ -205,21 +205,21 @@ public class PrintService : IPrintService
         var arabicSize = g.MeasureString(hammamArabe, fontArabicTitle);
         g.DrawString(hammamArabe, fontArabicTitle, brush, 
             new RectangleF(x, y, width, arabicSize.Height + 4), centerFormat);
-        y += arabicSize.Height + 5;
+        y += arabicSize.Height + 3;
 
         // ═══════════════════════════════════════
-        // TYPE DE TICKET (centré, sous le nom)
+        // TYPE DE TICKET (centré, sous le nom — plus gros)
         // ═══════════════════════════════════════
         var typeName = _currentTicket.TypeTicket;
         var typeSize = g.MeasureString(typeName, fontArabicType);
         g.DrawString(typeName, fontArabicType, brush,
             new RectangleF(x, y, width, typeSize.Height + 4), centerFormat);
-        y += typeSize.Height + 10;
+        y += typeSize.Height + 8;
 
         // ═══════════════════════════════════════
         // N°Ticket : XXXXXXXX (label français, centré)
         // ═══════════════════════════════════════
-        var ticketLine = $"N°Ticket:  {_currentTicket.TicketNumber}";
+        var ticketLine = $"N°Ticket  {_currentTicket.TicketNumber}";
         g.DrawString(ticketLine, fontNormal, brush,
             new RectangleF(x, y, width, 20), centerFormat);
         y += 24;
@@ -230,8 +230,8 @@ public class PrintService : IPrintService
         var priceFormatted = _currentTicket.Prix.ToString("F2").Replace('.', ',');
         var priceLine = $"PRIX :   {priceFormatted}";
         g.DrawString(priceLine, fontPrixValue, brush,
-            new RectangleF(x, y, width, 28), centerFormat);
-        y += 32;
+            new RectangleF(x, y, width, 30), centerFormat);
+        y += 34;
 
         // ═══════════════════════════════════════
         // DATE : JJ/MM/AAAA   HH:MM (centré)

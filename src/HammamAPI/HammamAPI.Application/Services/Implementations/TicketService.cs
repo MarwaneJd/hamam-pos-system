@@ -232,6 +232,23 @@ public class TicketService : ITicketService
         return allTickets.Sum(t => t.Prix);
     }
 
+    /// <summary>
+    /// Compte le total de TOUS les tickets d'un hammam (depuis toujours)
+    /// Utilisé pour le compteur permanent de numéros de tickets
+    /// </summary>
+    public async Task<int> GetTotalCountAsync(Guid? hammamId = null)
+    {
+        if (hammamId.HasValue)
+        {
+            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value);
+            return tickets.Count();
+        }
+
+        // Sans filtre, compter tous les tickets (toutes dates)
+        var all = await _ticketRepository.GetAllAsync();
+        return all.Count();
+    }
+
     private static TicketDto MapToDto(Ticket ticket)
     {
         return new TicketDto(

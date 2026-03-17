@@ -50,6 +50,7 @@ public partial class SalesViewModel : ObservableObject
     private string _hammamNomArabe = string.Empty;
 
     private int _hammamPrefixeTicket = 100000;
+    private int _totalTicketCount = 0; // Compteur total permanent (ne se réinitialise jamais)
 
     [ObservableProperty]
     private string _lastSaleMessage = string.Empty;
@@ -154,7 +155,7 @@ public partial class SalesViewModel : ObservableObject
             await _audioService.PlayBeepAsync();
 
             // 🖨️ IMPRESSION AUTOMATIQUE DU TICKET
-            var ticketNumber = _hammamPrefixeTicket + TodayTicketsCount + 1; // Préfixe + numéro du jour
+            var ticketNumber = _hammamPrefixeTicket + _totalTicketCount + 1; // Préfixe + compteur permanent
             await _printService.PrintTicketAsync(new TicketPrintData
             {
                 HammamNom = HammamNom,
@@ -264,7 +265,11 @@ public partial class SalesViewModel : ObservableObject
         var stats = await _ticketService.GetTodayStatsAsync(session.HammamId);
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
-        NextTicketNumber = _hammamPrefixeTicket + TodayTicketsCount + 1;
+
+        // Compteur permanent : total de TOUS les tickets du hammam (jamais remis à zéro)
+        _totalTicketCount = await _ticketService.GetTotalTicketCountAsync(session.HammamId);
+        NextTicketNumber = _hammamPrefixeTicket + _totalTicketCount + 1;
+
         PendingSyncCount = await _syncService.GetPendingCountAsync();
     }
 

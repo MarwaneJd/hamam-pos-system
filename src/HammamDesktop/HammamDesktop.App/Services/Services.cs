@@ -22,7 +22,9 @@ public interface ITicketService
     Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync();
     Task CreateTicketAsync(LocalTicket ticket);
     Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId);
+    Task<int> GetTotalTicketCountAsync(Guid hammamId);
     Task<int> GetTodayCountFromServerAsync(Guid hammamId);
+    Task<int> GetTotalCountFromServerAsync(Guid hammamId);
     Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
     Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
 }
@@ -289,6 +291,8 @@ public class TicketService : ITicketService
                     // Supprimer les anciens types
                     var oldTypes = await _db.TypeTickets.ToListAsync();
                     _db.TypeTickets.RemoveRange(oldTypes);
+                    await _db.SaveChangesAsync();
+                    _db.ChangeTracker.Clear();
                     
                     // Dossier pour cache des images
                     var imageDir = System.IO.Path.Combine(
@@ -306,10 +310,23 @@ public class TicketService : ITicketService
                         {
                             try
                             {
-                                var imageResponse = await client.GetAsync(apiType.ImageUrl);
+                                Uri? imageUri = null;
+                                if (Uri.TryCreate(apiType.ImageUrl, UriKind.Absolute, out var absoluteUri))
+                                {
+                                    imageUri = absoluteUri;
+                                }
+                                else if (client.BaseAddress != null)
+                                {
+                                    imageUri = new Uri(client.BaseAddress, apiType.ImageUrl);
+                                }
+
+                                if (imageUri == null)
+                                    throw new InvalidOperationException($"URL image invalide: {apiType.ImageUrl}");
+
+                                var imageResponse = await client.GetAsync(imageUri);
                                 if (imageResponse.IsSuccessStatusCode)
                                 {
-                                    var ext = System.IO.Path.GetExtension(new Uri(apiType.ImageUrl).AbsolutePath);
+                                    var ext = System.IO.Path.GetExtension(imageUri.AbsolutePath);
                                     if (string.IsNullOrEmpty(ext)) ext = ".png";
                                     var fileName = $"{apiType.Id}{ext}";
                                     localImagePath = System.IO.Path.Combine(imageDir, fileName);
@@ -432,6 +449,51 @@ public class TicketService : ITicketService
         catch (Exception ex)
         {
             Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur serveur");
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Compte le total de TOUS les tickets du hammam (local + serveur) pour le numéro permanent
+    /// </summary>
+    public async Task<int> GetTotalTicketCountAsync(Guid hammamId)
+    {
+        // D'abord compter les tickets locaux
+        var localCount = await _db.Tickets
+            .Where(t => t.HammamId == hammamId)
+            .CountAsync();
+
+        // Essayer de récupérer le total depuis le serveur (plus fiable)
+        var serverCount = await GetTotalCountFromServerAsync(hammamId);
+        
+        // Utiliser le max entre local et serveur
+        return Math.Max(localCount, serverCount);
+    }
+
+    /// <summary>
+    /// Récupère le total de tous les tickets d'un hammam depuis le serveur
+    /// </summary>
+    public async Task<int> GetTotalCountFromServerAsync(Guid hammamId)
+    {
+        try
+        {
+            var session = await _db.Sessions.FirstOrDefaultAsync();
+            if (session == null) return 0;
+
+            var client = _httpClientFactory.CreateClient("HammamApi");
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+
+            var response = await client.GetAsync($"api/tickets/count/total?hammamId={hammamId}");
+            if (response.IsSuccessStatusCode)
+            {
+                var count = await response.Content.ReadFromJsonAsync<int>();
+                return count;
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur total serveur");
         }
         return 0;
     }

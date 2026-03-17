@@ -145,4 +145,16 @@ public class TicketsController : ControllerBase
         var revenue = await _ticketService.GetTodayRevenueAsync(hammamId, employeId);
         return Ok(revenue);
     }
+
+    /// <summary>
+    /// Récupère le nombre TOTAL de tickets d'un hammam (depuis toujours)
+    /// Utilisé par l'app desktop pour le compteur permanent de tickets
+    /// </summary>
+    [HttpGet("count/total")]
+    public async Task<ActionResult<int>> GetTotalCount(
+        [FromQuery] Guid? hammamId = null)
+    {
+        var count = await _ticketService.GetTotalCountAsync(hammamId);
+        return Ok(count);
+    }
 }

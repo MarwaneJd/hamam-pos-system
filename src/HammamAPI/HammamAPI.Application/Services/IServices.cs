@@ -54,6 +54,7 @@ public interface ITicketService
     Task<TicketDto> CreateAsync(CreateTicketRequest request);
     Task<SyncTicketsResponse> SyncTicketsAsync(SyncTicketsRequest request);
     Task<int> GetTodayCountAsync(Guid? hammamId = null, Guid? employeId = null);
+    Task<int> GetTotalCountAsync(Guid? hammamId = null);
     Task<decimal> GetTodayRevenueAsync(Guid? hammamId = null, Guid? employeId = null);
 }
 
