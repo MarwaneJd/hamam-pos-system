@@ -152,22 +152,33 @@ public class PrintService : IPrintService
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         
         var arabicFamily = GetArabicFontFamily();
+        
+        // Segoe UI rend l'arabe plus petit que les polices arabes spécialisées
+        // On compense en augmentant la taille si c'est Segoe UI
+        bool isSegoeUI = arabicFamily.Equals("Segoe UI", StringComparison.OrdinalIgnoreCase);
+        float arabicTitleSize = isSegoeUI ? 28f : 24f;    // Nom du hammam — GROS
+        float arabicTypeSize = isSegoeUI ? 22f : 18f;     // Type de ticket — GROS
+        float arabicSmallSize = isSegoeUI ? 12f : 11f;    // Merci en arabe
 
-        // Polices — tailles agrandies pour correspondre à l'ancien système du client
+        Log.Information("Police arabe détectée: {Font}, isSegoeUI: {IsSegoe}", arabicFamily, isSegoeUI);
+
+        // Polices
         var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
         var fontPrixLabel = new Font("Segoe UI", 14, FontStyle.Bold);
         var fontPrixValue = new Font("Segoe UI", 18, FontStyle.Bold);
         var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
-        var fontArabicTitle = new Font(arabicFamily, 24, FontStyle.Bold);   // 19→24 : plus gros comme l'ancien
-        var fontArabicType = new Font(arabicFamily, 17, FontStyle.Bold);    // 13→17 : plus gros comme l'ancien
-        var fontArabicSmall = new Font(arabicFamily, 11, FontStyle.Regular);
+        var fontArabicTitle = new Font(arabicFamily, arabicTitleSize, FontStyle.Bold);
+        var fontArabicType = new Font(arabicFamily, arabicTypeSize, FontStyle.Bold);
+        var fontArabicSmall = new Font(arabicFamily, arabicSmallSize, FontStyle.Regular);
 
-        // Centrage : utiliser toute la largeur du papier avec marges symétriques
+        // ═══════════════════════════════════════
+        // CENTRAGE : utiliser x=0 et toute la largeur du papier
+        // L'imprimante thermique gère ses propres marges physiques
+        // ═══════════════════════════════════════
         float paperWidth = PAPER_WIDTH_MM * 3.937f;
-        float margin = 6f;
-        float x = margin;
+        float x = 0f;          // PAS de marge logicielle — laisser l'imprimante centrer
         float y = 6;
-        float width = paperWidth - (margin * 2);
+        float width = paperWidth;  // Utiliser TOUTE la largeur
 
         var brush = Brushes.Black;
         var centerFormat = new StringFormat { Alignment = StringAlignment.Center };
@@ -185,11 +196,11 @@ public class PrintService : IPrintService
             try
             {
                 using var logo = Image.FromFile(_currentTicket.TypeTicketImagePath);
-                float targetHeight = 95f;  // Légèrement plus grand
+                float targetHeight = 95f;
                 float scale = targetHeight / logo.Height;
                 float scaledWidth = logo.Width * scale;
                 float scaledHeight = targetHeight;
-                float logoX = x + (width - scaledWidth) / 2; // Centrer parfaitement
+                float logoX = (width - scaledWidth) / 2; // Centrer l'image sur toute la largeur
                 g.DrawImage(logo, logoX, y, scaledWidth, scaledHeight);
                 y += scaledHeight + 5;
             }
@@ -204,7 +215,7 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         var arabicSize = g.MeasureString(hammamArabe, fontArabicTitle);
         g.DrawString(hammamArabe, fontArabicTitle, brush, 
-            new RectangleF(x, y, width, arabicSize.Height + 4), centerFormat);
+            new RectangleF(x, y, width, arabicSize.Height + 6), centerFormat);
         y += arabicSize.Height + 3;
 
         // ═══════════════════════════════════════
@@ -213,7 +224,7 @@ public class PrintService : IPrintService
         var typeName = _currentTicket.TypeTicket;
         var typeSize = g.MeasureString(typeName, fontArabicType);
         g.DrawString(typeName, fontArabicType, brush,
-            new RectangleF(x, y, width, typeSize.Height + 4), centerFormat);
+            new RectangleF(x, y, width, typeSize.Height + 6), centerFormat);
         y += typeSize.Height + 8;
 
         // ═══════════════════════════════════════
