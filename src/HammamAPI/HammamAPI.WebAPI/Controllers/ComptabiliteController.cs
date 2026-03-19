@@ -32,16 +32,21 @@ public class ComptabiliteController : ControllerBase
     public async Task<ActionResult<ComptabiliteResumeDto>> GetResume(
         [FromQuery] Guid hammamId,
         [FromQuery] DateTime dateDebut,
-        [FromQuery] DateTime dateFin)
+        [FromQuery] DateTime dateFin,
+        [FromQuery] Guid? employeId = null)
     {
         var from = DateTime.SpecifyKind(dateDebut.Date, DateTimeKind.Utc);
         var to = DateTime.SpecifyKind(dateFin.Date.AddDays(1), DateTimeKind.Utc);
 
-        // Tickets de la période pour ce hammam (tous employés confondus)
-        var tickets = await _context.Tickets
+        // Tickets de la période pour ce hammam (filtré par employé si spécifié)
+        var ticketsQuery = _context.Tickets
             .Include(t => t.TypeTicket)
-            .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to)
-            .ToListAsync();
+            .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to);
+
+        if (employeId.HasValue)
+            ticketsQuery = ticketsQuery.Where(t => t.EmployeId == employeId.Value);
+
+        var tickets = await ticketsQuery.ToListAsync();
 
         // Versements existants (par jour, sans filtre employé)
         var versements = await _context.Versements
@@ -55,7 +60,7 @@ public class ComptabiliteController : ControllerBase
         var tousLesJours = ticketsParJour.Keys
             .Union(versements.Select(v => v.DateVersement.Date))
             .Distinct()
-            .OrderByDescending(d => d)
+            .OrderBy(d => d)
             .ToList();
 
         var jours = new List<JourComptabiliteDto>();
@@ -99,7 +104,7 @@ public class ComptabiliteController : ControllerBase
         // Si la période n'a aucun jour, ajouter les jours vides
         if (jours.Count == 0)
         {
-            for (var d = dateFin.Date; d >= dateDebut.Date; d = d.AddDays(-1))
+            for (var d = dateDebut.Date; d <= dateFin.Date; d = d.AddDays(1))
             {
                 jours.Add(new JourComptabiliteDto
                 {

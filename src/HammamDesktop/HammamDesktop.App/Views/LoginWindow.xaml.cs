@@ -199,9 +199,16 @@ public partial class LoginWindow : Window
             HammamNameText.Text = "Mode hors ligne";
             HammamNameText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")!);
 
+            // Identifier les profils qui ont un mot de passe en cache
+            var profilesWithHash = cachedProfiles
+                .Where(p => !string.IsNullOrEmpty(p.PasswordHash))
+                .Select(p => p.Id)
+                .ToHashSet();
+
             foreach (var profile in _profiles)
             {
-                var card = CreateProfileCard(profile);
+                bool hasOfflineAccess = profilesWithHash.Contains(profile.Id);
+                var card = CreateProfileCard(profile, hasOfflineAccess);
                 ProfilesGrid.Children.Add(card);
             }
 
@@ -214,8 +221,11 @@ public partial class LoginWindow : Window
         }
     }
 
-    private Border CreateProfileCard(EmployeProfile profile)
+    private Border CreateProfileCard(EmployeProfile profile, bool hasOfflineAccess = true)
     {
+        // En mode hors ligne, griser les profils sans accès offline
+        bool isDisabled = _isOfflineMode && !hasOfflineAccess;
+
         // Couleur basée sur l'icône (2 couleurs uniquement)
         var color = profile.Icone switch
         {
@@ -237,11 +247,13 @@ public partial class LoginWindow : Window
             Height = 160,
             Margin = new Thickness(10),
             CornerRadius = new CornerRadius(10),
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8FAFC")!),
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")!),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isDisabled ? "#F1F5F9" : "#F8FAFC")!),
+            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isDisabled ? "#CBD5E1" : "#E2E8F0")!),
             BorderThickness = new Thickness(2),
-            Cursor = Cursors.Hand,
-            Tag = profile
+            Cursor = isDisabled ? Cursors.No : Cursors.Hand,
+            Opacity = isDisabled ? 0.5 : 1.0,
+            Tag = profile,
+            ToolTip = isDisabled ? "Connectez-vous en ligne une première fois pour activer le mode hors ligne" : null
         };
 
         var stack = new StackPanel
@@ -256,13 +268,13 @@ public partial class LoginWindow : Window
             Width = 80,
             Height = 80,
             CornerRadius = new CornerRadius(40),
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)!),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isDisabled ? "#94A3B8" : color)!),
             HorizontalAlignment = HorizontalAlignment.Center
         };
 
         var icon = new PackIcon
         {
-            Kind = iconKind,
+            Kind = isDisabled ? PackIconKind.LockOutline : iconKind,
             Width = 50,
             Height = 50,
             Foreground = Brushes.White,
@@ -279,7 +291,7 @@ public partial class LoginWindow : Window
             Text = profile.Username,
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B")!),
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isDisabled ? "#94A3B8" : "#1E293B")!),
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 10, 0, 0)
         };
@@ -287,20 +299,23 @@ public partial class LoginWindow : Window
 
         card.Child = stack;
 
-        // Événement de clic
-        card.MouseLeftButtonUp += (s, e) => SelectProfile(profile, color, iconKind);
+        if (!isDisabled)
+        {
+            // Événement de clic
+            card.MouseLeftButtonUp += (s, e) => SelectProfile(profile, color, iconKind);
 
-        // Effet au survol
-        card.MouseEnter += (s, e) =>
-        {
-            card.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)!);
-            card.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EFF6FF")!);
-        };
-        card.MouseLeave += (s, e) =>
-        {
-            card.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")!);
-            card.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8FAFC")!);
-        };
+            // Effet au survol
+            card.MouseEnter += (s, e) =>
+            {
+                card.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)!);
+                card.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EFF6FF")!);
+            };
+            card.MouseLeave += (s, e) =>
+            {
+                card.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")!);
+                card.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8FAFC")!);
+            };
+        }
 
         return card;
     }

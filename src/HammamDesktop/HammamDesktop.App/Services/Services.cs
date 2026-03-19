@@ -178,9 +178,14 @@ public class AuthService : IAuthService
             var cachedProfile = await _db.EmployeProfiles
                 .FirstOrDefaultAsync(p => p.Username == username);
 
-            if (cachedProfile == null || string.IsNullOrEmpty(cachedProfile.PasswordHash))
+            if (cachedProfile == null)
             {
                 return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
+            }
+
+            if (string.IsNullOrEmpty(cachedProfile.PasswordHash))
+            {
+                return new LoginResult(false, "Connectez-vous en ligne une première fois pour activer le mode hors ligne.");
             }
 
             // Vérifier le mot de passe contre le hash en cache
