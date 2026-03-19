@@ -114,6 +114,45 @@ public class LocalSession
 }
 
 /// <summary>
+/// Profil employé en cache local (pour connexion hors ligne)
+/// </summary>
+[Table("employe_profiles")]
+public class LocalEmployeProfile
+{
+    [Key]
+    public Guid Id { get; set; }
+
+    [Required]
+    [MaxLength(50)]
+    public string Username { get; set; } = "";
+
+    [MaxLength(100)]
+    public string Prenom { get; set; } = "";
+
+    [MaxLength(100)]
+    public string Nom { get; set; } = "";
+
+    [MaxLength(20)]
+    public string Icone { get; set; } = "User1";
+
+    [Required]
+    public Guid HammamId { get; set; }
+
+    [MaxLength(100)]
+    public string HammamNom { get; set; } = "";
+
+    [MaxLength(100)]
+    public string HammamNomArabe { get; set; } = "";
+
+    public int HammamPrefixeTicket { get; set; } = 100000;
+
+    [MaxLength(128)]
+    public string PasswordHash { get; set; } = "";
+
+    public DateTime CachedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
 /// Configuration locale
 /// </summary>
 [Table("config")]

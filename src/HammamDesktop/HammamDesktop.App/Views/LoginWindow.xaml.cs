@@ -1,4 +1,5 @@
 using MaterialDesignThemes.Wpf;
+using Microsoft.EntityFrameworkCore;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Windows;
@@ -6,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using HammamDesktop.Data;
+using HammamDesktop.Data.Entities;
 using HammamDesktop.ViewModels;
 
 namespace HammamDesktop.Views;
@@ -17,18 +20,21 @@ public partial class LoginWindow : Window
 {
     private readonly LoginViewModel _viewModel;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly LocalDbContext _db;
     private List<EmployeProfile> _profiles = new();
     private EmployeProfile? _selectedProfile;
     private DispatcherTimer? _autoLoginTimer;
     private bool _isAutoLogging;
+    private bool _isOfflineMode;
 
-    public LoginWindow(LoginViewModel viewModel, IHttpClientFactory httpClientFactory)
+    public LoginWindow(LoginViewModel viewModel, IHttpClientFactory httpClientFactory, LocalDbContext db)
     {
         try
         {
             InitializeComponent();
             _viewModel = viewModel;
             _httpClientFactory = httpClientFactory;
+            _db = db;
             DataContext = _viewModel;
 
             Loaded += LoginWindow_Loaded;
@@ -80,6 +86,7 @@ public partial class LoginWindow : Window
             }
 
             _profiles = profiles;
+            _isOfflineMode = false;
             LoadingProfilesText.Visibility = Visibility.Collapsed;
 
             // Ne pas afficher le nom du hammam - la connexion est ouverte pour tous
@@ -91,16 +98,119 @@ public partial class LoginWindow : Window
                 var card = CreateProfileCard(profile);
                 ProfilesGrid.Children.Add(card);
             }
+
+            // Mettre en cache les profils pour utilisation hors ligne
+            await CacheProfilesAsync(profiles);
         }
         catch (HttpRequestException)
         {
-            LoadingProfilesText.Text = "Impossible de joindre le serveur";
-            Serilog.Log.Warning("Impossible de charger les profils - serveur inaccessible");
+            Serilog.Log.Warning("Serveur inaccessible - tentative de chargement des profils en cache");
+            await LoadCachedProfilesAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            Serilog.Log.Warning("Timeout serveur - tentative de chargement des profils en cache");
+            await LoadCachedProfilesAsync();
         }
         catch (Exception ex)
         {
             LoadingProfilesText.Text = "Erreur de chargement";
             Serilog.Log.Error(ex, "Erreur lors du chargement des profils");
+        }
+    }
+
+    private async Task CacheProfilesAsync(List<EmployeProfile> profiles)
+    {
+        try
+        {
+            var existingProfiles = await _db.EmployeProfiles.ToListAsync();
+            var serverIds = profiles.Select(p => p.Id).ToHashSet();
+
+            // Supprimer les profils qui n'existent plus sur le serveur
+            var toRemove = existingProfiles.Where(p => !serverIds.Contains(p.Id)).ToList();
+            if (toRemove.Any())
+                _db.EmployeProfiles.RemoveRange(toRemove);
+
+            // Ajouter ou mettre à jour les profils
+            foreach (var profile in profiles)
+            {
+                var existing = existingProfiles.FirstOrDefault(p => p.Id == profile.Id);
+                if (existing != null)
+                {
+                    existing.Username = profile.Username;
+                    existing.Prenom = profile.Prenom;
+                    existing.Nom = profile.Nom;
+                    existing.Icone = profile.Icone;
+                    existing.HammamId = profile.HammamId;
+                    existing.HammamNom = profile.HammamNom;
+                    existing.CachedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.EmployeProfiles.Add(new LocalEmployeProfile
+                    {
+                        Id = profile.Id,
+                        Username = profile.Username,
+                        Prenom = profile.Prenom,
+                        Nom = profile.Nom,
+                        Icone = profile.Icone,
+                        HammamId = profile.HammamId,
+                        HammamNom = profile.HammamNom,
+                        CachedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _db.SaveChangesAsync();
+            Serilog.Log.Information("Profils mis en cache: {Count} profils", profiles.Count);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Impossible de mettre en cache les profils");
+        }
+    }
+
+    private async Task LoadCachedProfilesAsync()
+    {
+        try
+        {
+            var cachedProfiles = await _db.EmployeProfiles.ToListAsync();
+
+            if (!cachedProfiles.Any())
+            {
+                LoadingProfilesText.Text = "Impossible de joindre le serveur";
+                return;
+            }
+
+            // Convertir les profils en cache vers le format attendu
+            _profiles = cachedProfiles.Select(p => new EmployeProfile
+            {
+                Id = p.Id,
+                Username = p.Username,
+                Prenom = p.Prenom,
+                Nom = p.Nom,
+                Icone = p.Icone,
+                HammamId = p.HammamId,
+                HammamNom = p.HammamNom
+            }).ToList();
+
+            _isOfflineMode = true;
+            LoadingProfilesText.Visibility = Visibility.Collapsed;
+            HammamNameText.Text = "Mode hors ligne";
+            HammamNameText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")!);
+
+            foreach (var profile in _profiles)
+            {
+                var card = CreateProfileCard(profile);
+                ProfilesGrid.Children.Add(card);
+            }
+
+            Serilog.Log.Information("Profils chargés depuis le cache: {Count} profils", _profiles.Count);
+        }
+        catch (Exception ex)
+        {
+            LoadingProfilesText.Text = "Impossible de joindre le serveur";
+            Serilog.Log.Error(ex, "Erreur lors du chargement des profils en cache");
         }
     }
 

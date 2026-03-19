@@ -16,6 +16,7 @@ public class LocalDbContext : DbContext
     public DbSet<LocalTypeTicket> TypeTickets => Set<LocalTypeTicket>();
     public DbSet<LocalSession> Sessions => Set<LocalSession>();
     public DbSet<LocalConfig> Configs => Set<LocalConfig>();
+    public DbSet<LocalEmployeProfile> EmployeProfiles => Set<LocalEmployeProfile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

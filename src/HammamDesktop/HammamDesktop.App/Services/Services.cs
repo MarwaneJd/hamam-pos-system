@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace HammamDesktop.Services;
 
@@ -73,15 +75,24 @@ public class AuthService : IAuthService
     private readonly LocalDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SessionSettings _sessionSettings;
+    private readonly IConnectivityService _connectivityService;
 
     public AuthService(
         LocalDbContext db,
         IHttpClientFactory httpClientFactory,
-        IOptions<SessionSettings> sessionSettings)
+        IOptions<SessionSettings> sessionSettings,
+        IConnectivityService connectivityService)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _sessionSettings = sessionSettings.Value;
+        _connectivityService = connectivityService;
+    }
+
+    private static string ComputePasswordHash(string password)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(password));
+        return Convert.ToHexString(bytes);
     }
 
     public async Task<LoginResult> LoginAsync(string username, string password)
@@ -89,7 +100,7 @@ public class AuthService : IAuthService
         try
         {
             var client = _httpClientFactory.CreateClient("HammamApi");
-            
+
             var response = await client.PostAsJsonAsync("api/auth/login", new
             {
                 Username = username,
@@ -102,7 +113,7 @@ public class AuthService : IAuthService
             }
 
             var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
-            
+
             if (result == null)
             {
                 return new LoginResult(false, "Réponse invalide du serveur");
@@ -130,18 +141,85 @@ public class AuthService : IAuthService
             };
 
             _db.Sessions.Add(session);
+
+            // Mettre en cache le hash du mot de passe pour connexion hors ligne
+            var cachedProfile = await _db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == result.Employe.Id);
+            if (cachedProfile != null)
+            {
+                cachedProfile.PasswordHash = ComputePasswordHash(password);
+                cachedProfile.HammamNomArabe = result.Employe.HammamNomArabe;
+                cachedProfile.HammamPrefixeTicket = result.Employe.HammamPrefixeTicket;
+                cachedProfile.CachedAt = DateTime.UtcNow;
+            }
+
             await _db.SaveChangesAsync();
 
             return new LoginResult(true);
         }
         catch (HttpRequestException)
         {
-            return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
+            return await TryOfflineLoginAsync(username, password);
+        }
+        catch (TaskCanceledException)
+        {
+            return await TryOfflineLoginAsync(username, password);
         }
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la connexion");
             return new LoginResult(false, "Erreur inattendue");
+        }
+    }
+
+    private async Task<LoginResult> TryOfflineLoginAsync(string username, string password)
+    {
+        try
+        {
+            var cachedProfile = await _db.EmployeProfiles
+                .FirstOrDefaultAsync(p => p.Username == username);
+
+            if (cachedProfile == null || string.IsNullOrEmpty(cachedProfile.PasswordHash))
+            {
+                return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
+            }
+
+            // Vérifier le mot de passe contre le hash en cache
+            var hash = ComputePasswordHash(password);
+            if (hash != cachedProfile.PasswordHash)
+            {
+                return new LoginResult(false, "Identifiants invalides");
+            }
+
+            // Connexion hors ligne réussie — créer une session locale
+            var oldSessions = await _db.Sessions.ToListAsync();
+            _db.Sessions.RemoveRange(oldSessions);
+
+            var session = new LocalSession
+            {
+                Id = Guid.NewGuid(),
+                EmployeId = cachedProfile.Id,
+                Username = cachedProfile.Username,
+                Nom = cachedProfile.Nom,
+                Prenom = cachedProfile.Prenom,
+                HammamId = cachedProfile.HammamId,
+                HammamNom = cachedProfile.HammamNom,
+                HammamNomArabe = cachedProfile.HammamNomArabe,
+                HammamPrefixeTicket = cachedProfile.HammamPrefixeTicket,
+                Token = "offline-session",
+                ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Sessions.Add(session);
+            await _db.SaveChangesAsync();
+
+            Serilog.Log.Information("Connexion hors ligne réussie pour {Username}", username);
+            return new LoginResult(true);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Erreur lors de la connexion hors ligne");
+            return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
         }
     }
 
@@ -180,13 +258,22 @@ public class AuthService : IAuthService
     public async Task<bool> HasValidSessionAsync()
     {
         var session = await _db.Sessions.FirstOrDefaultAsync();
-        
+
         if (session == null)
             return false;
 
         // Vérifier l'expiration (8 heures)
         if (session.ExpiresAt < DateTime.UtcNow)
         {
+            // Si hors ligne, prolonger la session automatiquement
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                session.ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours);
+                await _db.SaveChangesAsync();
+                Serilog.Log.Information("Session prolongée automatiquement (hors ligne)");
+                return true;
+            }
+
             _db.Sessions.Remove(session);
             await _db.SaveChangesAsync();
             return false;
@@ -198,10 +285,19 @@ public class AuthService : IAuthService
     public async Task<LocalSession?> GetCurrentSessionAsync()
     {
         var session = await _db.Sessions.FirstOrDefaultAsync();
-        
+
         if (session != null && session.ExpiresAt < DateTime.UtcNow)
         {
-            // Session expirée
+            // Si hors ligne, prolonger la session automatiquement
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                session.ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours);
+                await _db.SaveChangesAsync();
+                Serilog.Log.Information("Session prolongée automatiquement (hors ligne)");
+                return session;
+            }
+
+            // Session expirée et en ligne
             await LogoutAsync();
             return null;
         }

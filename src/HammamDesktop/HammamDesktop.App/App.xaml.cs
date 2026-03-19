@@ -127,6 +127,23 @@ public partial class App : Application
                 
                 Log.Information("Initialisation de la base de données SQLite...");
                 await dbContext.Database.EnsureCreatedAsync();
+
+                // Créer la table employe_profiles si elle n'existe pas (pour les bases existantes)
+                await dbContext.Database.ExecuteSqlRawAsync(@"
+                    CREATE TABLE IF NOT EXISTS employe_profiles (
+                        Id TEXT NOT NULL PRIMARY KEY,
+                        Username TEXT NOT NULL,
+                        Prenom TEXT,
+                        Nom TEXT,
+                        Icone TEXT,
+                        HammamId TEXT NOT NULL,
+                        HammamNom TEXT,
+                        HammamNomArabe TEXT,
+                        HammamPrefixeTicket INTEGER NOT NULL DEFAULT 100000,
+                        PasswordHash TEXT,
+                        CachedAt TEXT NOT NULL
+                    )");
+
                 Log.Information("Base de données initialisée avec succès");
             }
 

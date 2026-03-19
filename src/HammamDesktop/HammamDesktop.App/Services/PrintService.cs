@@ -156,29 +156,29 @@ public class PrintService : IPrintService
         // Segoe UI rend l'arabe plus petit que les polices arabes spécialisées
         // On compense en augmentant la taille si c'est Segoe UI
         bool isSegoeUI = arabicFamily.Equals("Segoe UI", StringComparison.OrdinalIgnoreCase);
-        float arabicTitleSize = isSegoeUI ? 28f : 24f;    // Nom du hammam — GROS
-        float arabicTypeSize = isSegoeUI ? 22f : 18f;     // Type de ticket — GROS
-        float arabicSmallSize = isSegoeUI ? 12f : 11f;    // Merci en arabe
+        float arabicTitleSize = isSegoeUI ? 25f : 21f;    // Nom du hammam — GROS
+        float arabicTypeSize = isSegoeUI ? 19f : 16f;     // Type de ticket — GROS
+        float arabicSmallSize = isSegoeUI ? 11f : 10f;    // Merci en arabe
 
         Log.Information("Police arabe détectée: {Font}, isSegoeUI: {IsSegoe}", arabicFamily, isSegoeUI);
 
         // Polices
-        var fontNormal = new Font("Segoe UI", 10, FontStyle.Regular);
-        var fontPrixLabel = new Font("Segoe UI", 14, FontStyle.Bold);
-        var fontPrixValue = new Font("Segoe UI", 18, FontStyle.Bold);
-        var fontSmall = new Font("Segoe UI", 9, FontStyle.Regular);
+        var fontNormal = new Font("Segoe UI", 9, FontStyle.Regular);
+        var fontPrixLabel = new Font("Segoe UI", 12, FontStyle.Bold);
+        var fontPrixValue = new Font("Segoe UI", 16, FontStyle.Bold);
+        var fontSmall = new Font("Segoe UI", 8, FontStyle.Regular);
         var fontArabicTitle = new Font(arabicFamily, arabicTitleSize, FontStyle.Bold);
         var fontArabicType = new Font(arabicFamily, arabicTypeSize, FontStyle.Bold);
         var fontArabicSmall = new Font(arabicFamily, arabicSmallSize, FontStyle.Regular);
 
         // ═══════════════════════════════════════
-        // CENTRAGE : utiliser x=0 et toute la largeur du papier
-        // L'imprimante thermique gère ses propres marges physiques
+        // CENTRAGE : marges symétriques pour la zone imprimable
         // ═══════════════════════════════════════
         float paperWidth = PAPER_WIDTH_MM * 3.937f;
-        float x = 0f;          // PAS de marge logicielle — laisser l'imprimante centrer
+        float margin = 8f;     // Marges symétriques — même approche que le ticket clôture
+        float x = margin;
         float y = 6;
-        float width = paperWidth;  // Utiliser TOUTE la largeur
+        float width = paperWidth - (margin * 2);
 
         var brush = Brushes.Black;
         var centerFormat = new StringFormat { Alignment = StringAlignment.Center };
@@ -200,7 +200,7 @@ public class PrintService : IPrintService
                 float scale = targetHeight / logo.Height;
                 float scaledWidth = logo.Width * scale;
                 float scaledHeight = targetHeight;
-                float logoX = (width - scaledWidth) / 2; // Centrer l'image sur toute la largeur
+                float logoX = x + (width - scaledWidth) / 2; // Centrer l'image dans la zone imprimable
                 g.DrawImage(logo, logoX, y, scaledWidth, scaledHeight);
                 y += scaledHeight + 5;
             }
@@ -232,8 +232,8 @@ public class PrintService : IPrintService
         // ═══════════════════════════════════════
         var ticketLine = $"N°Ticket  {_currentTicket.TicketNumber}";
         g.DrawString(ticketLine, fontNormal, brush,
-            new RectangleF(x, y, width, 20), centerFormat);
-        y += 24;
+            new RectangleF(x, y, width, 18), centerFormat);
+        y += 22;
 
         // ═══════════════════════════════════════
         // PRIX : XX,XX (label français, gros, centré)
@@ -241,24 +241,24 @@ public class PrintService : IPrintService
         var priceFormatted = _currentTicket.Prix.ToString("F2").Replace('.', ',');
         var priceLine = $"PRIX :   {priceFormatted}";
         g.DrawString(priceLine, fontPrixValue, brush,
-            new RectangleF(x, y, width, 30), centerFormat);
-        y += 34;
+            new RectangleF(x, y, width, 26), centerFormat);
+        y += 30;
 
         // ═══════════════════════════════════════
         // DATE : JJ/MM/AAAA   HH:MM (centré)
         // ═══════════════════════════════════════
         var dateLine = $"DATE :   {_currentTicket.DateHeure:dd/MM/yyyy}    {_currentTicket.DateHeure:HH:mm}";
         g.DrawString(dateLine, fontNormal, brush,
-            new RectangleF(x, y, width, 20), centerFormat);
-        y += 24;
+            new RectangleF(x, y, width, 18), centerFormat);
+        y += 22;
 
         // ═══════════════════════════════════════
         // Caissier : NOM (centré)
         // ═══════════════════════════════════════
         var caissierLine = $"Caissier :  {_currentTicket.EmployeNom.ToUpper()}";
         g.DrawString(caissierLine, fontNormal, brush,
-            new RectangleF(x, y, width, 20), centerFormat);
-        y += 24;
+            new RectangleF(x, y, width, 18), centerFormat);
+        y += 22;
 
         // ═══════════════════════════════════════
         // شكرا على زيارتكم (merci, centré en bas)
