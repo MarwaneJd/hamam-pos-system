@@ -38,39 +38,36 @@ public class HammamsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<HammamDto>>> GetAll()
     {
+        var today = DateTime.UtcNow.Date;
+        var tomorrow = today.AddDays(1);
+
         var hammams = await _context.Hammams
-            .Include(h => h.Employes)
-            .Include(h => h.Tickets)
-            .Include(h => h.TypeTickets)
+            .Select(h => new HammamDto
+            {
+                Id = h.Id,
+                Code = h.Code,
+                Nom = h.Nom,
+                NomArabe = h.NomArabe,
+                PrefixeTicket = h.PrefixeTicket,
+                Adresse = h.Adresse,
+                IsActif = h.Actif,
+                NombreEmployes = h.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
+                TicketsAujourdhui = h.Tickets.Count(t => t.CreatedAt >= today && t.CreatedAt < tomorrow),
+                RecetteAujourdhui = h.Tickets.Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow).Sum(t => (decimal?)t.Prix) ?? 0m,
+                TypeTickets = h.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
+                {
+                    Id = t.Id,
+                    Nom = t.Nom,
+                    Prix = t.Prix,
+                    Couleur = t.Couleur,
+                    Icone = t.Icone,
+                    Ordre = t.Ordre
+                }).ToList(),
+                DateCreation = h.CreatedAt
+            })
             .ToListAsync();
 
-        var today = DateTime.UtcNow.Date;
-
-        var result = hammams.Select(h => new HammamDto
-        {
-            Id = h.Id,
-            Code = h.Code,
-            Nom = h.Nom,
-            NomArabe = h.NomArabe,
-            PrefixeTicket = h.PrefixeTicket,
-            Adresse = h.Adresse,
-            IsActif = h.Actif,
-            NombreEmployes = h.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
-            TicketsAujourdhui = h.Tickets.Count(t => t.CreatedAt.Date == today),
-            RecetteAujourdhui = h.Tickets.Where(t => t.CreatedAt.Date == today).Sum(t => t.Prix),
-            TypeTickets = h.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
-            {
-                Id = t.Id,
-                Nom = t.Nom,
-                Prix = t.Prix,
-                Couleur = t.Couleur,
-                Icone = t.Icone,
-                Ordre = t.Ordre
-            }).ToList(),
-            DateCreation = h.CreatedAt
-        });
-
-        return Ok(result);
+        return Ok(hammams);
     }
 
     /// <summary>
@@ -79,40 +76,40 @@ public class HammamsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<HammamDto>> GetById(Guid id)
     {
+        var today = DateTime.UtcNow.Date;
+        var tomorrow = today.AddDays(1);
+
         var hammam = await _context.Hammams
-            .Include(h => h.Employes)
-            .Include(h => h.Tickets)
-            .Include(h => h.TypeTickets)
-            .FirstOrDefaultAsync(h => h.Id == id);
+            .Where(h => h.Id == id)
+            .Select(h => new HammamDto
+            {
+                Id = h.Id,
+                Code = h.Code,
+                Nom = h.Nom,
+                NomArabe = h.NomArabe,
+                PrefixeTicket = h.PrefixeTicket,
+                Adresse = h.Adresse,
+                IsActif = h.Actif,
+                NombreEmployes = h.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
+                TicketsAujourdhui = h.Tickets.Count(t => t.CreatedAt >= today && t.CreatedAt < tomorrow),
+                RecetteAujourdhui = h.Tickets.Where(t => t.CreatedAt >= today && t.CreatedAt < tomorrow).Sum(t => (decimal?)t.Prix) ?? 0m,
+                TypeTickets = h.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
+                {
+                    Id = t.Id,
+                    Nom = t.Nom,
+                    Prix = t.Prix,
+                    Couleur = t.Couleur,
+                    Icone = t.Icone,
+                    Ordre = t.Ordre
+                }).ToList(),
+                DateCreation = h.CreatedAt
+            })
+            .FirstOrDefaultAsync();
 
         if (hammam == null)
             return NotFound(new { message = "Hammam non trouvé" });
 
-        var today = DateTime.UtcNow.Date;
-
-        return Ok(new HammamDto
-        {
-            Id = hammam.Id,
-            Code = hammam.Code,
-            Nom = hammam.Nom,
-            NomArabe = hammam.NomArabe,
-            PrefixeTicket = hammam.PrefixeTicket,
-            Adresse = hammam.Adresse,
-            IsActif = hammam.Actif,
-            NombreEmployes = hammam.Employes.Count(e => e.Actif && e.Role != EmployeRole.Admin),
-            TicketsAujourdhui = hammam.Tickets.Count(t => t.CreatedAt.Date == today),
-            RecetteAujourdhui = hammam.Tickets.Where(t => t.CreatedAt.Date == today).Sum(t => t.Prix),
-            TypeTickets = hammam.TypeTickets.Where(t => t.Actif).OrderBy(t => t.Ordre).Select(t => new HammamTypeTicketDto
-            {
-                Id = t.Id,
-                Nom = t.Nom,
-                Prix = t.Prix,
-                Couleur = t.Couleur,
-                Icone = t.Icone,
-                Ordre = t.Ordre
-            }).ToList(),
-            DateCreation = hammam.CreatedAt
-        });
+        return Ok(hammam);
     }
 
     /// <summary>

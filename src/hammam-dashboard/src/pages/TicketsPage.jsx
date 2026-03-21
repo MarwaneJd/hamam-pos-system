@@ -53,12 +53,9 @@ export default function TicketsPage() {
         loadInitialData()
     }, [])
 
-    // Charger les tickets quand les filtres changent avec un délai
+    // Charger les tickets quand les filtres changent
     useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            loadTickets()
-        }, 300)
-        return () => clearTimeout(timeoutId)
+        loadTickets()
     }, [selectedHammam, selectedEmploye, dateFrom, dateTo])
 
     // Filtrer les employés quand le hammam change
