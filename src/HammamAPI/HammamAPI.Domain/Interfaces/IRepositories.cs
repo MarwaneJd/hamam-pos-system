@@ -57,6 +57,7 @@ public interface ITicketRepository : IRepository<Ticket>
     Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
     Task<int> GetCountByDateAsync(Guid hammamId, DateTime date);
     Task<decimal> GetRevenueByDateAsync(Guid hammamId, DateTime date);
+    Task<int> GetTotalCountAsync(Guid? hammamId = null);
 }
 
 /// <summary>

@@ -238,15 +238,7 @@ public class TicketService : ITicketService
     /// </summary>
     public async Task<int> GetTotalCountAsync(Guid? hammamId = null)
     {
-        if (hammamId.HasValue)
-        {
-            var tickets = await _ticketRepository.GetByHammamIdAsync(hammamId.Value);
-            return tickets.Count();
-        }
-
-        // Sans filtre, compter tous les tickets (toutes dates)
-        var all = await _ticketRepository.GetAllAsync();
-        return all.Count();
+        return await _ticketRepository.GetTotalCountAsync(hammamId);
     }
 
     private static TicketDto MapToDto(Ticket ticket)

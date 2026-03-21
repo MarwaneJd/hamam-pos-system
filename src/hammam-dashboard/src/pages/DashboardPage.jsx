@@ -62,11 +62,11 @@ export default function DashboardPage() {
         loadStats()
     }, [period])
 
-    // Auto-refresh toutes les 30 secondes
+    // Auto-refresh toutes les 2 minutes
     useEffect(() => {
         const interval = setInterval(() => {
             loadStats(true)
-        }, 30000)
+        }, 120000)
         return () => clearInterval(interval)
     }, [period])
 

@@ -264,4 +264,13 @@ public class TicketRepository : Repository<Ticket>, ITicketRepository
             .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to)
             .SumAsync(t => t.Prix);
     }
+
+    public async Task<int> GetTotalCountAsync(Guid? hammamId = null)
+    {
+        if (hammamId.HasValue)
+        {
+            return await _dbSet.CountAsync(t => t.HammamId == hammamId.Value);
+        }
+        return await _dbSet.CountAsync();
+    }
 }
