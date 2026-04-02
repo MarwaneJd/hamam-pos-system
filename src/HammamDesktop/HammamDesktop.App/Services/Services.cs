@@ -2,6 +2,7 @@ using HammamDesktop.Data;
 using HammamDesktop.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -22,11 +23,13 @@ public interface IAuthService
 public interface ITicketService
 {
     Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync();
-    Task CreateTicketAsync(LocalTicket ticket);
+    Task<string> CreateTicketAsync(LocalTicket ticket);
+    Task<string> CreateTicketWithNextNumberAsync(LocalTicket ticket, int hammamPrefixeTicket);
+    Task<string> GetNextTicketNumberAsync(Guid hammamId, int hammamPrefixeTicket);
     Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId);
+    Task<int> GetTotalTicketCountAsync();
     Task<int> GetTotalTicketCountAsync(Guid hammamId);
     Task<int> GetTodayCountFromServerAsync(Guid hammamId);
-    Task<int> GetTotalCountFromServerAsync(Guid hammamId);
     Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
     Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
 }
@@ -99,11 +102,18 @@ public class AuthService : IAuthService
     {
         try
         {
+            var normalizedUsername = username.Trim();
+
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                return await TryOfflineLoginAsync(normalizedUsername, password);
+            }
+
             var client = _httpClientFactory.CreateClient("HammamApi");
 
             var response = await client.PostAsJsonAsync("api/auth/login", new
             {
-                Username = username,
+                Username = normalizedUsername,
                 Password = password
             });
 
@@ -143,13 +153,41 @@ public class AuthService : IAuthService
             _db.Sessions.Add(session);
 
             // Mettre en cache le hash du mot de passe pour connexion hors ligne
-            var cachedProfile = await _db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == result.Employe.Id);
+            var loginUsername = (result.Employe.Username ?? normalizedUsername).Trim();
+            var loweredLoginUsername = loginUsername.ToLower();
+
+            var cachedProfile = await _db.EmployeProfiles
+                .FirstOrDefaultAsync(p => p.Username.ToLower() == loweredLoginUsername)
+                ?? await _db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == result.Employe.Id);
+
             if (cachedProfile != null)
             {
-                cachedProfile.PasswordHash = ComputePasswordHash(password);
+                cachedProfile.Username = loginUsername;
+                cachedProfile.Prenom = result.Employe.Prenom;
+                cachedProfile.Nom = result.Employe.Nom;
+                cachedProfile.HammamId = result.Employe.HammamId;
+                cachedProfile.HammamNom = result.Employe.HammamNom;
                 cachedProfile.HammamNomArabe = result.Employe.HammamNomArabe;
                 cachedProfile.HammamPrefixeTicket = result.Employe.HammamPrefixeTicket;
+                cachedProfile.PasswordHash = ComputePasswordHash(password);
                 cachedProfile.CachedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                _db.EmployeProfiles.Add(new LocalEmployeProfile
+                {
+                    Id = result.Employe.Id,
+                    Username = loginUsername,
+                    Prenom = result.Employe.Prenom,
+                    Nom = result.Employe.Nom,
+                    Icone = "User1",
+                    HammamId = result.Employe.HammamId,
+                    HammamNom = result.Employe.HammamNom,
+                    HammamNomArabe = result.Employe.HammamNomArabe,
+                    HammamPrefixeTicket = result.Employe.HammamPrefixeTicket,
+                    PasswordHash = ComputePasswordHash(password),
+                    CachedAt = DateTime.UtcNow
+                });
             }
 
             await _db.SaveChangesAsync();
@@ -175,17 +213,13 @@ public class AuthService : IAuthService
     {
         try
         {
+            var normalizedUsername = username.Trim().ToLower();
             var cachedProfile = await _db.EmployeProfiles
-                .FirstOrDefaultAsync(p => p.Username == username);
+                .FirstOrDefaultAsync(p => p.Username.ToLower() == normalizedUsername);
 
-            if (cachedProfile == null)
+            if (cachedProfile == null || string.IsNullOrEmpty(cachedProfile.PasswordHash))
             {
                 return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
-            }
-
-            if (string.IsNullOrEmpty(cachedProfile.PasswordHash))
-            {
-                return new LoginResult(false, "Connectez-vous en ligne une première fois pour activer le mode hors ligne.");
             }
 
             // Vérifier le mot de passe contre le hash en cache
@@ -341,12 +375,20 @@ public class TicketService : ITicketService
 {
     private readonly LocalDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConnectivityService _connectivityService;
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _hammamLocks = new();
     private bool _typesSynced = false;
+    private const string LastTicketConfigPrefix = "LastTicketNumber:";
+    private const string DeviceSuffixConfigKey = "DeviceSuffix";
 
-    public TicketService(LocalDbContext db, IHttpClientFactory httpClientFactory)
+    public TicketService(
+        LocalDbContext db,
+        IHttpClientFactory httpClientFactory,
+        IConnectivityService connectivityService)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
+        _connectivityService = connectivityService;
     }
 
     public async Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync()
@@ -354,7 +396,14 @@ public class TicketService : ITicketService
         // Si pas encore synchronisé, essayer de charger depuis l'API
         if (!_typesSynced)
         {
-            await SyncTypesFromApiAsync();
+            if (await _connectivityService.CheckConnectivityAsync())
+            {
+                await SyncTypesFromApiAsync();
+            }
+            else
+            {
+                _typesSynced = true;
+            }
         }
         
         var types = await _db.TypeTickets.OrderBy(t => t.Ordre).ToListAsync();
@@ -464,6 +513,7 @@ public class TicketService : ITicketService
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la synchronisation des types de tickets");
+            _db.ChangeTracker.Clear();
             _typesSynced = true; // Marquer comme tenté pour éviter les boucles
         }
     }
@@ -483,10 +533,69 @@ public class TicketService : ITicketService
         Serilog.Log.Information("Types de tickets par défaut créés");
     }
 
-    public async Task CreateTicketAsync(LocalTicket ticket)
+    private SemaphoreSlim GetHammamLock(Guid hammamId)
     {
-        _db.Tickets.Add(ticket);
-        await _db.SaveChangesAsync();
+        return _hammamLocks.GetOrAdd(hammamId, _ => new SemaphoreSlim(1, 1));
+    }
+
+    public async Task<string> CreateTicketWithNextNumberAsync(LocalTicket ticket, int hammamPrefixeTicket)
+    {
+        var hammamLock = GetHammamLock(ticket.HammamId);
+        await hammamLock.WaitAsync();
+
+        try
+        {
+            const int maxAttempts = 5;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    await using var transaction = await _db.Database.BeginTransactionAsync();
+
+                    var ticketNumber = await ReserveNextTicketNumberInternalAsync(ticket.HammamId, hammamPrefixeTicket);
+                    ticket.TicketNumber = ticketNumber;
+
+                    _db.Tickets.Add(ticket);
+                    await _db.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+                    return ticketNumber;
+                }
+                catch (DbUpdateException ex) when (IsTicketNumberUniqueCollision(ex) && attempt < maxAttempts)
+                {
+                    _db.Entry(ticket).State = EntityState.Detached;
+                    Serilog.Log.Warning(ex,
+                        "Collision numéro ticket détectée (tentative {Attempt}/{Max}), retry automatique",
+                        attempt, maxAttempts);
+                }
+            }
+
+            throw new InvalidOperationException("Impossible de générer un numéro de ticket unique après plusieurs tentatives.");
+        }
+        catch
+        {
+            throw;
+        }
+        finally
+        {
+            hammamLock.Release();
+        }
+    }
+
+    public async Task<string> CreateTicketAsync(LocalTicket ticket)
+    {
+        var session = await _db.Sessions.FirstOrDefaultAsync();
+        var hammamPrefixeTicket = session?.HammamPrefixeTicket ?? 100000;
+        return await CreateTicketWithNextNumberAsync(ticket, hammamPrefixeTicket);
+    }
+
+    public async Task<string> GetNextTicketNumberAsync(Guid hammamId, int hammamPrefixeTicket)
+    {
+        var lastTicketNumber = await GetLastTicketNumberSnapshotAsync(hammamId, hammamPrefixeTicket);
+        var nextNumericNumber = lastTicketNumber + 1;
+        var deviceSuffix = await GetOrCreateDeviceSuffixAsync();
+        return $"{nextNumericNumber}-{deviceSuffix}";
     }
 
     public async Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId)
@@ -529,10 +638,35 @@ public class TicketService : ITicketService
         return (tickets.Count, tickets.Sum(t => t.Prix));
     }
 
+    public async Task<int> GetTotalTicketCountAsync()
+    {
+        var session = await _db.Sessions.FirstOrDefaultAsync();
+        if (session == null)
+        {
+            return await _db.Tickets.CountAsync();
+        }
+
+        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == session.HammamId);
+        var serverCount = await GetTotalCountFromServerAsync(session.HammamId);
+        return Math.Max(localCount, serverCount);
+    }
+
+    public async Task<int> GetTotalTicketCountAsync(Guid hammamId)
+    {
+        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == hammamId);
+        var serverCount = await GetTotalCountFromServerAsync(hammamId);
+        return Math.Max(localCount, serverCount);
+    }
+
     public async Task<int> GetTodayCountFromServerAsync(Guid hammamId)
     {
         try
         {
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                return 0;
+            }
+
             var session = await _db.Sessions.FirstOrDefaultAsync();
             if (session == null) return 0;
 
@@ -554,30 +688,15 @@ public class TicketService : ITicketService
         return 0;
     }
 
-    /// <summary>
-    /// Compte le total de TOUS les tickets du hammam (local + serveur) pour le numéro permanent
-    /// </summary>
-    public async Task<int> GetTotalTicketCountAsync(Guid hammamId)
-    {
-        // D'abord compter les tickets locaux
-        var localCount = await _db.Tickets
-            .Where(t => t.HammamId == hammamId)
-            .CountAsync();
-
-        // Essayer de récupérer le total depuis le serveur (plus fiable)
-        var serverCount = await GetTotalCountFromServerAsync(hammamId);
-        
-        // Utiliser le max entre local et serveur
-        return Math.Max(localCount, serverCount);
-    }
-
-    /// <summary>
-    /// Récupère le total de tous les tickets d'un hammam depuis le serveur
-    /// </summary>
-    public async Task<int> GetTotalCountFromServerAsync(Guid hammamId)
+    private async Task<int> GetTotalCountFromServerAsync(Guid hammamId)
     {
         try
         {
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                return 0;
+            }
+
             var session = await _db.Sessions.FirstOrDefaultAsync();
             if (session == null) return 0;
 
@@ -596,7 +715,110 @@ public class TicketService : ITicketService
         {
             Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur total serveur");
         }
+
         return 0;
+    }
+
+    private async Task<int> GetLastTicketNumberSnapshotAsync(Guid hammamId, int hammamPrefixeTicket)
+    {
+        var configKey = $"{LastTicketConfigPrefix}{hammamId}";
+        var config = await _db.Configs.FirstOrDefaultAsync(c => c.Key == configKey);
+
+        var lastTicketFromConfig = 0;
+        if (config != null)
+        {
+            _ = int.TryParse(config.Value, out lastTicketFromConfig);
+        }
+
+        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == hammamId);
+        var baseTicketNumber = hammamPrefixeTicket + localCount;
+
+        if (config == null && await _connectivityService.CheckConnectivityAsync())
+        {
+            var serverCount = await GetTotalCountFromServerAsync(hammamId);
+            baseTicketNumber = hammamPrefixeTicket + Math.Max(localCount, serverCount);
+        }
+
+        return Math.Max(lastTicketFromConfig, baseTicketNumber);
+    }
+
+    private async Task<string> ReserveNextTicketNumberInternalAsync(Guid hammamId, int hammamPrefixeTicket)
+    {
+        var configKey = $"{LastTicketConfigPrefix}{hammamId}";
+        var currentLastTicketNumber = await GetLastTicketNumberSnapshotAsync(hammamId, hammamPrefixeTicket);
+        var nextTicketNumber = currentLastTicketNumber + 1;
+        var deviceSuffix = await GetOrCreateDeviceSuffixAsync();
+
+        var config = await _db.Configs.FirstOrDefaultAsync(c => c.Key == configKey);
+        if (config == null)
+        {
+            config = new LocalConfig
+            {
+                Key = configKey,
+                Value = nextTicketNumber.ToString(),
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.Configs.Add(config);
+        }
+        else
+        {
+            config.Value = nextTicketNumber.ToString();
+            config.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return $"{nextTicketNumber}-{deviceSuffix}";
+    }
+
+    private async Task<string> GetOrCreateDeviceSuffixAsync()
+    {
+        var existing = await _db.Configs.FirstOrDefaultAsync(c => c.Key == DeviceSuffixConfigKey);
+        if (existing != null && IsValidDeviceSuffix(existing.Value))
+        {
+            return existing.Value;
+        }
+
+        var suffix = CreateRandomDeviceSuffix();
+
+        if (existing == null)
+        {
+            _db.Configs.Add(new LocalConfig
+            {
+                Key = DeviceSuffixConfigKey,
+                Value = suffix,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            existing.Value = suffix;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return suffix;
+    }
+
+    private static bool IsTicketNumberUniqueCollision(DbUpdateException ex)
+    {
+        var message = ex.InnerException?.Message ?? ex.Message;
+        return message.Contains("IX_tickets_hammam_ticket_number", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("UNIQUE constraint failed: tickets.HammamId, tickets.TicketNumber", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("duplicate key value violates unique constraint", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsValidDeviceSuffix(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value.Length >= 4
+            && value.All(char.IsLetterOrDigit);
+    }
+
+    private static string CreateRandomDeviceSuffix()
+    {
+        Span<byte> bytes = stackalloc byte[3];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToHexString(bytes);
     }
 
     public async Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100)
@@ -719,6 +941,9 @@ public class SyncService : ISyncService
                 Tickets = ticketList.Select(t => new
                 {
                     t.Id,
+                    TicketNumber = string.IsNullOrWhiteSpace(t.TicketNumber)
+                        ? $"LEGACY-{t.Id.ToString("N")[..8]}"
+                        : t.TicketNumber,
                     t.TypeTicketId,
                     t.EmployeId,
                     t.HammamId,
@@ -730,15 +955,32 @@ public class SyncService : ISyncService
 
             if (response.IsSuccessStatusCode)
             {
-                await _ticketService.MarkAsSyncedAsync(ticketList.Select(t => t.Id));
+                // Lire la réponse du serveur pour savoir quels tickets ont échoué
+                var syncResult = await response.Content.ReadFromJsonAsync<SyncResponse>();
                 
-                Serilog.Log.Information("Synchronisation réussie: {Count} tickets", ticketList.Count);
+                var failedIds = syncResult?.FailedTicketIds?.ToHashSet() ?? new HashSet<Guid>();
+                var successIds = ticketList
+                    .Where(t => !failedIds.Contains(t.Id))
+                    .Select(t => t.Id)
+                    .ToList();
+
+                if (successIds.Any())
+                {
+                    await _ticketService.MarkAsSyncedAsync(successIds);
+                }
+                
+                var syncedCount = successIds.Count;
+                var errorCount = failedIds.Count;
+
+                Serilog.Log.Information(
+                    "Synchronisation terminée: {Synced} réussis, {Errors} échoués sur {Total} total",
+                    syncedCount, errorCount, ticketList.Count);
                 
                 SyncCompleted?.Invoke(this, new SyncEventArgs
                 {
-                    SyncedCount = ticketList.Count,
-                    ErrorCount = 0,
-                    Success = true
+                    SyncedCount = syncedCount,
+                    ErrorCount = errorCount,
+                    Success = errorCount == 0
                 });
             }
             else
@@ -765,6 +1007,15 @@ public class SyncService : ISyncService
             });
         }
     }
+
+    // DTO pour lire la réponse du serveur
+    private record SyncResponse(
+        int TotalReceived,
+        int Inserted,
+        int Updated,
+        int Errors,
+        IEnumerable<Guid>? FailedTicketIds
+    );
 
     public async Task<int> GetPendingCountAsync()
     {
@@ -817,8 +1068,7 @@ public class ConnectivityService : IConnectivityService
     {
         try
         {
-            var client = _httpClientFactory.CreateClient("HammamApi");
-            client.Timeout = TimeSpan.FromSeconds(5);
+                var client = _httpClientFactory.CreateClient("HammamApiFast");
             
             var response = await client.GetAsync("health");
             return response.IsSuccessStatusCode;

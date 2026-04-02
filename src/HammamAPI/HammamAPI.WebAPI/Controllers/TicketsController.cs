@@ -107,7 +107,16 @@ public class TicketsController : ControllerBase
         {
             _logger.LogInformation("Début synchronisation de {Count} tickets", request.Tickets.Count());
             
-            var result = await _ticketService.SyncTicketsAsync(request);
+            // Extraire le HammamId de l'utilisateur authentifié (JWT claim)
+            // C'est le VRAI HammamId du serveur, même si le desktop a des IDs locaux
+            Guid? callerHammamId = null;
+            var hammamIdClaim = User.FindFirst("HammamId")?.Value;
+            if (!string.IsNullOrEmpty(hammamIdClaim) && Guid.TryParse(hammamIdClaim, out var parsedHammamId))
+            {
+                callerHammamId = parsedHammamId;
+            }
+
+            var result = await _ticketService.SyncTicketsAsync(request, callerHammamId);
             
             _logger.LogInformation(
                 "Synchronisation terminée: {Inserted} insérés, {Updated} mis à jour, {Errors} erreurs",

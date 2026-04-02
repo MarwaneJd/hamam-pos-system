@@ -52,7 +52,7 @@ public interface ITicketService
     Task<IEnumerable<TicketDto>> GetByHammamAsync(Guid hammamId, DateTime? from = null, DateTime? to = null);
     Task<IEnumerable<TicketDto>> GetByEmployeAsync(Guid employeId, DateTime? from = null, DateTime? to = null);
     Task<TicketDto> CreateAsync(CreateTicketRequest request);
-    Task<SyncTicketsResponse> SyncTicketsAsync(SyncTicketsRequest request);
+    Task<SyncTicketsResponse> SyncTicketsAsync(SyncTicketsRequest request, Guid? callerHammamId = null);
     Task<int> GetTodayCountAsync(Guid? hammamId = null, Guid? employeId = null);
     Task<int> GetTotalCountAsync(Guid? hammamId = null);
     Task<decimal> GetTodayRevenueAsync(Guid? hammamId = null, Guid? employeId = null);
