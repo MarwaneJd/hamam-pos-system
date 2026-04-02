@@ -165,6 +165,23 @@ using (var scope = app.Services.CreateScope())
         try
         {
             await db.Database.MigrateAsync();
+
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ticket
+                ADD COLUMN IF NOT EXISTS ticket_number character varying(50)
+            ");
+
+            await db.Database.ExecuteSqlRawAsync(@"
+                UPDATE ticket
+                SET ticket_number = 'LEGACY-' || substring(replace(id::text, '-', '') from 1 for 8)
+                WHERE ticket_number IS NULL OR ticket_number = ''
+            ");
+
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_ticket_hammam_ticket_number
+                ON ticket (hammam_id, ticket_number)
+            ");
+
             Log.Information("✅ Migrations PostgreSQL appliquées");
         }
         catch (Exception ex)

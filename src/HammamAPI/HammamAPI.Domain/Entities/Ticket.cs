@@ -9,6 +9,7 @@ namespace HammamAPI.Domain.Entities;
 public class Ticket
 {
     public Guid Id { get; set; } // UUID généré localement
+    public string TicketNumber { get; set; } = string.Empty;
     public Guid TypeTicketId { get; set; }
     public Guid EmployeId { get; set; }
     public Guid HammamId { get; set; }

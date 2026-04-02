@@ -164,6 +164,7 @@ public class ComptabiliteController : ControllerBase
             Tickets = tickets.Select(t => new TicketDetailDto
             {
                 Id = t.Id,
+                TicketNumber = t.TicketNumber,
                 Heure = t.CreatedAt,
                 TypeTicket = t.TypeTicket.Nom,
                 Employe = $"{t.Employe.Prenom} {t.Employe.Nom}",
@@ -320,6 +321,7 @@ public class JourDetailCompletDto
 public class TicketDetailDto
 {
     public Guid Id { get; set; }
+    public string TicketNumber { get; set; } = "";
     public DateTime Heure { get; set; }
     public string TypeTicket { get; set; } = "";
     public string Employe { get; set; } = "";
