@@ -148,6 +148,7 @@ public record UpdateTypeTicketRequest(
 
 public record TicketDto(
     Guid Id,
+    string TicketNumber,
     Guid TypeTicketId,
     string TypeTicketNom,
     Guid EmployeId,
@@ -162,6 +163,7 @@ public record TicketDto(
 
 public record CreateTicketRequest(
     Guid Id, // UUID généré localement
+    string TicketNumber,
     Guid TypeTicketId,
     Guid EmployeId,
     Guid HammamId,

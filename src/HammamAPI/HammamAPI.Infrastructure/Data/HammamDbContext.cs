@@ -112,6 +112,7 @@ public class HammamDbContext : DbContext
             entity.ToTable("ticket");
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Id).HasColumnName("id");
+            entity.Property(t => t.TicketNumber).HasColumnName("ticket_number").HasMaxLength(50).IsRequired();
             entity.Property(t => t.TypeTicketId).HasColumnName("type_ticket_id");
             entity.Property(t => t.EmployeId).HasColumnName("employe_id");
             entity.Property(t => t.HammamId).HasColumnName("hammam_id");
@@ -127,6 +128,7 @@ public class HammamDbContext : DbContext
             entity.HasIndex(t => t.EmployeId);
             entity.HasIndex(t => new { t.HammamId, t.CreatedAt });
             entity.HasIndex(t => new { t.EmployeId, t.CreatedAt });
+            entity.HasIndex(t => new { t.HammamId, t.TicketNumber }).IsUnique();
         });
 
         // Configuration Versement
