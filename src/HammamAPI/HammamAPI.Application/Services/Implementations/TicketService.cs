@@ -259,6 +259,18 @@ public class TicketService : ITicketService
                 // === 4. Insérer ou mettre à jour le ticket ===
                 var existing = await _ticketRepository.GetByIdAsync(ticketRequest.Id);
 
+                // Si le ticket n'est pas trouvé par ID, vérifier par (hammam_id, ticket_number)
+                // Car le desktop peut régénérer un nouveau GUID pour un ticket déjà synchronisé
+                if (existing == null && !string.IsNullOrEmpty(ticketRequest.TicketNumber))
+                {
+                    existing = await _ticketRepository.GetByTicketNumberAsync(resolvedHammamId, ticketRequest.TicketNumber);
+                    if (existing != null)
+                    {
+                        _logger.LogWarning("[SYNC] Ticket ID {TicketId} inconnu mais ticket_number={TicketNumber} déjà existant (ID={ExistingId}). Traité comme doublon.",
+                            ticketRequest.Id, ticketRequest.TicketNumber, existing.Id);
+                    }
+                }
+
                 if (existing == null)
                 {
                     var createdAtUtc = ticketRequest.CreatedAt.Kind == DateTimeKind.Unspecified

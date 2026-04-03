@@ -273,4 +273,10 @@ public class TicketRepository : Repository<Ticket>, ITicketRepository
         }
         return await _dbSet.CountAsync();
     }
+
+    public async Task<Ticket?> GetByTicketNumberAsync(Guid hammamId, string ticketNumber)
+    {
+        return await _dbSet
+            .FirstOrDefaultAsync(t => t.HammamId == hammamId && t.TicketNumber == ticketNumber);
+    }
 }
