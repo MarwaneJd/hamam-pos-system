@@ -266,6 +266,191 @@ public class ComptabiliteController : ControllerBase
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Diagnostic : distribution des tickets par hammam + détection des mismatches
+    /// (ticket.HammamId != employe.HammamId)
+    /// </summary>
+    [HttpGet("diagnostic")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<DiagnosticResumeDto>> GetDiagnostic(
+        [FromQuery] DateTime? dateDebut = null,
+        [FromQuery] DateTime? dateFin = null)
+    {
+        var from = dateDebut.HasValue
+            ? DateTime.SpecifyKind(dateDebut.Value.Date, DateTimeKind.Utc)
+            : DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(-30), DateTimeKind.Utc);
+        var to = dateFin.HasValue
+            ? DateTime.SpecifyKind(dateFin.Value.Date.AddDays(1), DateTimeKind.Utc)
+            : DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1), DateTimeKind.Utc);
+
+        // Distribution des tickets par hammam
+        var ticketsParHammam = await _context.Tickets
+            .Include(t => t.Hammam)
+            .Where(t => t.CreatedAt >= from && t.CreatedAt < to)
+            .GroupBy(t => new { t.HammamId, t.Hammam.Nom })
+            .Select(g => new HammamTicketCountDto
+            {
+                HammamId = g.Key.HammamId,
+                HammamNom = g.Key.Nom,
+                Count = g.Count(),
+                Revenue = g.Sum(t => t.Prix)
+            })
+            .OrderByDescending(h => h.Count)
+            .ToListAsync();
+
+        // Tickets mal assignés : ticket.HammamId != employe.HammamId
+        var mismatches = await _context.Tickets
+            .Include(t => t.Employe)
+            .ThenInclude(e => e.Hammam)
+            .Include(t => t.Hammam)
+            .Where(t => t.CreatedAt >= from && t.CreatedAt < to && t.HammamId != t.Employe.HammamId)
+            .GroupBy(t => new
+            {
+                TicketHammamId = t.HammamId,
+                TicketHammamNom = t.Hammam.Nom,
+                EmployeHammamId = t.Employe.HammamId,
+                EmployeHammamNom = t.Employe.Hammam.Nom
+            })
+            .Select(g => new MismatchGroupDto
+            {
+                TicketHammamId = g.Key.TicketHammamId,
+                TicketHammamNom = g.Key.TicketHammamNom,
+                EmployeHammamId = g.Key.EmployeHammamId,
+                EmployeHammamNom = g.Key.EmployeHammamNom,
+                Count = g.Count(),
+                Revenue = g.Sum(t => t.Prix)
+            })
+            .OrderByDescending(m => m.Count)
+            .ToListAsync();
+
+        return new DiagnosticResumeDto
+        {
+            DateDebut = from,
+            DateFin = dateFin?.Date ?? DateTime.UtcNow.Date,
+            TotalTickets = ticketsParHammam.Sum(h => h.Count),
+            TicketsParHammam = ticketsParHammam,
+            Mismatches = mismatches,
+            TotalMismatched = mismatches.Sum(m => m.Count)
+        };
+    }
+
+    /// <summary>
+    /// Preview : montre combien de tickets seraient réparés (dry-run)
+    /// </summary>
+    [HttpPost("repair-preview")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<RepairPreviewDto>> RepairPreview([FromBody] RepairRequest request)
+    {
+        var moves = await GetMismatchedTicketMoves(request);
+        return new RepairPreviewDto
+        {
+            TotalAffected = moves.Sum(m => m.TicketCount),
+            Moves = moves
+        };
+    }
+
+    /// <summary>
+    /// Exécute la réparation : réassigne ticket.HammamId = employe.HammamId
+    /// </summary>
+    [HttpPost("repair-execute")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<RepairPreviewDto>> RepairExecute([FromBody] RepairRequest request)
+    {
+        var from = request.DateDebut.HasValue
+            ? DateTime.SpecifyKind(request.DateDebut.Value.Date, DateTimeKind.Utc)
+            : (DateTime?)null;
+        var to = request.DateFin.HasValue
+            ? DateTime.SpecifyKind(request.DateFin.Value.Date.AddDays(1), DateTimeKind.Utc)
+            : (DateTime?)null;
+
+        var query = _context.Tickets
+            .Include(t => t.Employe)
+            .Where(t => t.HammamId != t.Employe.HammamId);
+
+        if (from.HasValue)
+            query = query.Where(t => t.CreatedAt >= from.Value);
+        if (to.HasValue)
+            query = query.Where(t => t.CreatedAt < to.Value);
+        if (request.SourceHammamId.HasValue)
+            query = query.Where(t => t.HammamId == request.SourceHammamId.Value);
+
+        var tickets = await query.ToListAsync();
+
+        var repaired = 0;
+        foreach (var ticket in tickets)
+        {
+            _logger.LogInformation(
+                "Repair: Ticket {TicketId} HammamId {OldHammam} -> {NewHammam} (employe {EmpId})",
+                ticket.Id, ticket.HammamId, ticket.Employe.HammamId, ticket.EmployeId);
+            ticket.HammamId = ticket.Employe.HammamId;
+            repaired++;
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Repair terminé : {Count} tickets corrigés", repaired);
+
+        // Retourner le résumé des mouvements effectués
+        var moves = tickets
+            .GroupBy(t => new { From = t.HammamId, To = t.Employe.HammamId })
+            .Select(g => new RepairMoveDto
+            {
+                FromHammamId = g.Key.From,
+                ToHammamId = g.Key.To,
+                TicketCount = g.Count(),
+                Revenue = g.Sum(t => t.Prix)
+            })
+            .ToList();
+
+        return new RepairPreviewDto
+        {
+            TotalAffected = repaired,
+            Moves = moves
+        };
+    }
+
+    private async Task<List<RepairMoveDto>> GetMismatchedTicketMoves(RepairRequest request)
+    {
+        var from = request.DateDebut.HasValue
+            ? DateTime.SpecifyKind(request.DateDebut.Value.Date, DateTimeKind.Utc)
+            : (DateTime?)null;
+        var to = request.DateFin.HasValue
+            ? DateTime.SpecifyKind(request.DateFin.Value.Date.AddDays(1), DateTimeKind.Utc)
+            : (DateTime?)null;
+
+        var query = _context.Tickets
+            .Include(t => t.Employe).ThenInclude(e => e.Hammam)
+            .Include(t => t.Hammam)
+            .Where(t => t.HammamId != t.Employe.HammamId);
+
+        if (from.HasValue)
+            query = query.Where(t => t.CreatedAt >= from.Value);
+        if (to.HasValue)
+            query = query.Where(t => t.CreatedAt < to.Value);
+        if (request.SourceHammamId.HasValue)
+            query = query.Where(t => t.HammamId == request.SourceHammamId.Value);
+
+        return await query
+            .GroupBy(t => new
+            {
+                FromId = t.HammamId,
+                FromNom = t.Hammam.Nom,
+                ToId = t.Employe.HammamId,
+                ToNom = t.Employe.Hammam.Nom
+            })
+            .Select(g => new RepairMoveDto
+            {
+                FromHammamId = g.Key.FromId,
+                FromHammamNom = g.Key.FromNom,
+                ToHammamId = g.Key.ToId,
+                ToHammamNom = g.Key.ToNom,
+                TicketCount = g.Count(),
+                Revenue = g.Sum(t => t.Prix)
+            })
+            .OrderByDescending(m => m.TicketCount)
+            .ToListAsync();
+    }
 }
 
 #region DTOs
@@ -346,6 +531,59 @@ public class VersementResultDto
     public decimal MontantRemis { get; set; }
     public decimal Ecart { get; set; }
     public bool EstPositif { get; set; }
+}
+
+// --- Diagnostic & Repair DTOs ---
+
+public class DiagnosticResumeDto
+{
+    public DateTime DateDebut { get; set; }
+    public DateTime DateFin { get; set; }
+    public int TotalTickets { get; set; }
+    public List<HammamTicketCountDto> TicketsParHammam { get; set; } = new();
+    public List<MismatchGroupDto> Mismatches { get; set; } = new();
+    public int TotalMismatched { get; set; }
+}
+
+public class HammamTicketCountDto
+{
+    public Guid HammamId { get; set; }
+    public string HammamNom { get; set; } = "";
+    public int Count { get; set; }
+    public decimal Revenue { get; set; }
+}
+
+public class MismatchGroupDto
+{
+    public Guid TicketHammamId { get; set; }
+    public string TicketHammamNom { get; set; } = "";
+    public Guid EmployeHammamId { get; set; }
+    public string EmployeHammamNom { get; set; } = "";
+    public int Count { get; set; }
+    public decimal Revenue { get; set; }
+}
+
+public class RepairRequest
+{
+    public DateTime? DateDebut { get; set; }
+    public DateTime? DateFin { get; set; }
+    public Guid? SourceHammamId { get; set; }
+}
+
+public class RepairPreviewDto
+{
+    public int TotalAffected { get; set; }
+    public List<RepairMoveDto> Moves { get; set; } = new();
+}
+
+public class RepairMoveDto
+{
+    public Guid FromHammamId { get; set; }
+    public string FromHammamNom { get; set; } = "";
+    public Guid ToHammamId { get; set; }
+    public string ToHammamNom { get; set; } = "";
+    public int TicketCount { get; set; }
+    public decimal Revenue { get; set; }
 }
 
 #endregion

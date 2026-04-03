@@ -2,6 +2,7 @@ using HammamAPI.Application.DTOs;
 using HammamAPI.Application.Services;
 using HammamAPI.Domain.Entities;
 using HammamAPI.Domain.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace HammamAPI.Application.Services.Implementations;
 
@@ -14,17 +15,20 @@ public class TicketService : ITicketService
     private readonly ITypeTicketRepository _typeTicketRepository;
     private readonly IEmployeRepository _employeRepository;
     private readonly IHammamRepository _hammamRepository;
+    private readonly ILogger<TicketService> _logger;
 
     public TicketService(
         ITicketRepository ticketRepository,
         ITypeTicketRepository typeTicketRepository,
         IEmployeRepository employeRepository,
-        IHammamRepository hammamRepository)
+        IHammamRepository hammamRepository,
+        ILogger<TicketService> logger)
     {
         _ticketRepository = ticketRepository;
         _typeTicketRepository = typeTicketRepository;
         _employeRepository = employeRepository;
         _hammamRepository = hammamRepository;
+        _logger = logger;
     }
 
     public async Task<TicketDto?> GetByIdAsync(Guid id)
@@ -141,25 +145,15 @@ public class TicketService : ITicketService
                     else if (callerHammamId.HasValue && await _hammamRepository.ExistsAsync(callerHammamId.Value))
                     {
                         resolvedHammamId = callerHammamId.Value;
-                        System.Console.WriteLine($"[SYNC] HammamId {ticketRequest.HammamId} introuvable, remplacé par HammamId du caller {callerHammamId.Value}");
+                        _logger.LogWarning("[SYNC] HammamId {TicketHammamId} introuvable, remplacé par HammamId du caller {CallerHammamId}", ticketRequest.HammamId, callerHammamId.Value);
                     }
                     else
                     {
-                        // Dernier recours : prendre le premier hammam actif
-                        var allHammams = await _hammamRepository.GetAllActiveAsync();
-                        var fallbackHammam = allHammams.FirstOrDefault();
-                        if (fallbackHammam != null)
-                        {
-                            resolvedHammamId = fallbackHammam.Id;
-                            System.Console.WriteLine($"[SYNC] HammamId {ticketRequest.HammamId} introuvable, fallback vers {fallbackHammam.Id} ({fallbackHammam.Nom})");
-                        }
-                        else
-                        {
-                            System.Console.WriteLine($"[SYNC ERROR] Aucun hammam trouvé pour remplacer {ticketRequest.HammamId}");
-                            errors++;
-                            failedIds.Add(ticketRequest.Id);
-                            continue;
-                        }
+                        // Rejeter le ticket — ne pas assigner à un hammam arbitraire
+                        _logger.LogError("[SYNC] HammamId {TicketHammamId} introuvable et aucun caller HammamId valide. Ticket {TicketId} rejeté.", ticketRequest.HammamId, ticketRequest.Id);
+                        errors++;
+                        failedIds.Add(ticketRequest.Id);
+                        continue;
                     }
                     hammamIdCache[ticketRequest.HammamId] = resolvedHammamId;
                 }
@@ -189,7 +183,7 @@ public class TicketService : ITicketService
                         if (matchByPrice != null)
                         {
                             resolvedTypeTicketId = matchByPrice.Id;
-                            System.Console.WriteLine($"[SYNC] TypeTicketId {ticketRequest.TypeTicketId} introuvable, remplacé par {matchByPrice.Id} ({matchByPrice.Nom}, prix={matchByPrice.Prix}) via correspondance de prix");
+                            _logger.LogWarning("[SYNC] TypeTicketId {TicketTypeId} introuvable, remplacé par {ResolvedTypeId} ({TypeNom}, prix={TypePrix}) via correspondance de prix", ticketRequest.TypeTicketId, matchByPrice.Id, matchByPrice.Nom, matchByPrice.Prix);
                         }
                         else
                         {
@@ -198,11 +192,11 @@ public class TicketService : ITicketService
                             if (anyType != null)
                             {
                                 resolvedTypeTicketId = anyType.Id;
-                                System.Console.WriteLine($"[SYNC] TypeTicketId {ticketRequest.TypeTicketId} introuvable, fallback vers {anyType.Id} ({anyType.Nom})");
+                                _logger.LogWarning("[SYNC] TypeTicketId {TicketTypeId} introuvable, fallback vers {ResolvedTypeId} ({TypeNom})", ticketRequest.TypeTicketId, anyType.Id, anyType.Nom);
                             }
                             else
                             {
-                                System.Console.WriteLine($"[SYNC ERROR] Aucun type de ticket trouvé pour remplacer {ticketRequest.TypeTicketId}");
+                                _logger.LogError("[SYNC] Aucun type de ticket trouvé pour remplacer {TicketTypeId}. Ticket {TicketId} rejeté.", ticketRequest.TypeTicketId, ticketRequest.Id);
                                 errors++;
                                 failedIds.Add(ticketRequest.Id);
                                 continue;
@@ -228,7 +222,7 @@ public class TicketService : ITicketService
                         if (fallback != null)
                         {
                             resolvedEmployeId = fallback.Id;
-                            System.Console.WriteLine($"[SYNC] EmployeId {ticketRequest.EmployeId} introuvable, remplacé par {fallback.Id} ({fallback.Prenom} {fallback.Nom})");
+                            _logger.LogWarning("[SYNC] EmployeId {TicketEmployeId} introuvable, remplacé par {ResolvedEmployeId} ({EmpPrenom} {EmpNom})", ticketRequest.EmployeId, fallback.Id, fallback.Prenom, fallback.Nom);
                         }
                         else
                         {
@@ -237,11 +231,11 @@ public class TicketService : ITicketService
                             if (anyEmploye != null)
                             {
                                 resolvedEmployeId = anyEmploye.Id;
-                                System.Console.WriteLine($"[SYNC] EmployeId {ticketRequest.EmployeId} introuvable, fallback vers {anyEmploye.Id} ({anyEmploye.Prenom} {anyEmploye.Nom})");
+                                _logger.LogWarning("[SYNC] EmployeId {TicketEmployeId} introuvable, fallback vers {ResolvedEmployeId} ({EmpPrenom} {EmpNom})", ticketRequest.EmployeId, anyEmploye.Id, anyEmploye.Prenom, anyEmploye.Nom);
                             }
                             else
                             {
-                                System.Console.WriteLine($"[SYNC ERROR] Aucun employé trouvé pour hammam {resolvedHammamId}");
+                                _logger.LogError("[SYNC] Aucun employé trouvé pour hammam {HammamId}. Ticket {TicketId} rejeté.", resolvedHammamId, ticketRequest.Id);
                                 errors++;
                                 failedIds.Add(ticketRequest.Id);
                                 continue;
@@ -249,6 +243,17 @@ public class TicketService : ITicketService
                         }
                     }
                     employeIdCache[ticketRequest.EmployeId] = resolvedEmployeId;
+                }
+
+                // === Cross-validation : le HammamId de l'employé est la source de vérité ===
+                var resolvedEmploye = await _employeRepository.GetByIdAsync(resolvedEmployeId);
+                if (resolvedEmploye != null && resolvedEmploye.HammamId != resolvedHammamId)
+                {
+                    _logger.LogWarning(
+                        "[SYNC] Cross-validation: ticket HammamId={TicketHammam} mais employé {EmpId} appartient à HammamId={EmpHammam}. Utilisation du hammam de l'employé.",
+                        resolvedHammamId, resolvedEmployeId, resolvedEmploye.HammamId);
+                    resolvedHammamId = resolvedEmploye.HammamId;
+                    hammamIdCache[ticketRequest.HammamId] = resolvedHammamId;
                 }
 
                 // === 4. Insérer ou mettre à jour le ticket ===
@@ -298,7 +303,7 @@ public class TicketService : ITicketService
             }
             catch (Exception ex)
             {
-                System.Console.WriteLine($"[SYNC ERROR] Ticket={ticketRequest.Id} EmployeId={ticketRequest.EmployeId} HammamId={ticketRequest.HammamId} TypeTicketId={ticketRequest.TypeTicketId} Error={ex.InnerException?.Message ?? ex.Message}");
+                _logger.LogError(ex, "[SYNC] Erreur ticket {TicketId} EmployeId={EmployeId} HammamId={HammamId} TypeTicketId={TypeTicketId}", ticketRequest.Id, ticketRequest.EmployeId, ticketRequest.HammamId, ticketRequest.TypeTicketId);
                 errors++;
                 failedIds.Add(ticketRequest.Id);
             }
