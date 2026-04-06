@@ -157,18 +157,28 @@ export default function ComptabilitePage() {
 
   const exportToCSV = () => {
     if (!resumeData?.jours?.length) { alert('Aucune donnée à exporter'); return; }
+    const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
+    const sep = ';';
     const headers = ['Date', 'Tickets', 'Théorique (DH)', 'Remis (DH)', 'Écart (DH)', 'Status'];
     const rows = resumeData.jours.map(j => [
-      j.date, j.nombreTickets, j.montantTheorique?.toFixed(2) || '0.00',
+      formatDate(j.date),
+      j.nombreTickets,
+      j.montantTheorique?.toFixed(2) || '0.00',
       j.montantRemis !== null && j.montantRemis !== undefined ? j.montantRemis.toFixed(2) : 'Non saisi',
       j.ecart !== null && j.ecart !== undefined ? j.ecart.toFixed(2) : 'N/A',
       j.estValide ? (j.ecart >= 0 ? 'OK' : 'Déficit') : 'En attente'
     ]);
-    rows.push(['TOTAL', resumeData.totalTickets, resumeData.totalTheorique?.toFixed(2), resumeData.totalRemis?.toFixed(2), resumeData.totalEcart?.toFixed(2), '']);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    rows.push([
+      'TOTAL', resumeData.totalTickets,
+      resumeData.totalTheorique?.toFixed(2) || '0.00',
+      resumeData.totalRemis?.toFixed(2) || '0.00',
+      resumeData.totalEcart?.toFixed(2) || '0.00',
+      ''
+    ]);
+    const csvLines = [headers.join(sep), ...rows.map(r => r.join(sep))];
+    const csv = csvLines.join('\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
     link.href = URL.createObjectURL(blob);
     link.download = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.csv`;
     link.style.visibility = 'hidden';

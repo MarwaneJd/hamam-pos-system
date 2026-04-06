@@ -29,6 +29,10 @@ export default function DashboardPage() {
         switch (period) {
             case 'today':
                 return { from: startOfDay(now), to: endOfDay(now) }
+            case 'yesterday': {
+                const yesterday = subDays(now, 1)
+                return { from: startOfDay(yesterday), to: endOfDay(yesterday) }
+            }
             case 'week':
                 return { from: startOfDay(subDays(now, 7)), to: endOfDay(now) }
             case 'month':
@@ -95,6 +99,7 @@ export default function DashboardPage() {
 
     const periodLabels = {
         today: "Aujourd'hui",
+        yesterday: 'Hier',
         week: '7 derniers jours',
         month: 'Ce mois',
     }
