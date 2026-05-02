@@ -13,8 +13,7 @@ import {
   Eye,
   Receipt,
   Download,
-  FileSpreadsheet,
-  User
+  FileSpreadsheet
 } from 'lucide-react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
@@ -22,8 +21,6 @@ import * as XLSX from 'xlsx';
 export default function ComptabilitePage() {
   const [hammams, setHammams] = useState([]);
   const [selectedHammam, setSelectedHammam] = useState('');
-  const [employes, setEmployes] = useState([]);
-  const [selectedEmploye, setSelectedEmploye] = useState('');
 
   const getTodayDate = () => {
     const now = new Date();
@@ -43,8 +40,7 @@ export default function ComptabilitePage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => { fetchHammams(); }, []);
-  useEffect(() => { if (selectedHammam) { fetchEmployes(); setSelectedEmploye(''); } }, [selectedHammam]);
-  useEffect(() => { if (selectedHammam) fetchResume(); }, [selectedHammam, dateDebut, dateFin, selectedEmploye]);
+  useEffect(() => { if (selectedHammam) fetchResume(); }, [selectedHammam, dateDebut, dateFin]);
 
   const fetchHammams = async () => {
     try {
@@ -56,24 +52,12 @@ export default function ComptabilitePage() {
     }
   };
 
-  const fetchEmployes = async () => {
-    try {
-      const response = await api.get('/employes');
-      const filtered = response.data.filter(e => e.hammamId === selectedHammam && e.isActif);
-      setEmployes(filtered);
-    } catch (error) {
-      console.error('Erreur chargement employés:', error);
-    }
-  };
-
   const fetchResume = async () => {
     if (!selectedHammam) return;
     setLoading(true);
     try {
-      const params = { hammamId: selectedHammam, dateDebut, dateFin };
-      if (selectedEmploye) params.employeId = selectedEmploye;
       const response = await api.get('/comptabilite/resume', {
-        params
+        params: { hammamId: selectedHammam, dateDebut, dateFin }
       });
       setResumeData(response.data);
     } catch (error) {
@@ -242,7 +226,7 @@ export default function ComptabilitePage() {
 
       {/* Filtres */}
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
               <Building2 className="w-4 h-4 inline mr-2" />Hammam
@@ -250,16 +234,6 @@ export default function ComptabilitePage() {
             <select value={selectedHammam} onChange={(e) => setSelectedHammam(e.target.value)}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-emerald-500">
               {hammams.map((h) => <option key={h.id} value={h.id}>{h.nom}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              <User className="w-4 h-4 inline mr-2" />Employé
-            </label>
-            <select value={selectedEmploye} onChange={(e) => setSelectedEmploye(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-emerald-500">
-              <option value="">Tous les employés</option>
-              {employes.map((e) => <option key={e.id} value={e.id}>{e.prenom} {e.nom}</option>)}
             </select>
           </div>
           <div>
