@@ -219,6 +219,11 @@ public class ComptabiliteController : ControllerBase
     [HttpPost("versement")]
     public async Task<ActionResult<VersementResultDto>> SaveVersement([FromBody] SaveVersementDto dto)
     {
+        // EmployeId obligatoire : le remis est par employé. Sans cela on créerait un versement
+        // legacy (employe_id NULL) qui n'est plus le mode supporté.
+        if (!dto.EmployeId.HasValue)
+            return BadRequest(new { message = "EmployeId requis. Sélectionnez un employé avant de saisir le remis." });
+
         var jour = DateTime.SpecifyKind(dto.Date.Date, DateTimeKind.Utc);
         var jourFin = DateTime.SpecifyKind(dto.Date.Date.AddDays(1), DateTimeKind.Utc);
 
