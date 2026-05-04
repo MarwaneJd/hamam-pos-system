@@ -160,13 +160,21 @@ export default function ComptabilitePage() {
   const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   const formatMoney = (amount) => `${amount?.toFixed(2) || '0.00'} DH`;
 
+  const getSelectedEmployeName = () => {
+    if (!selectedEmploye) return 'Tous les employés';
+    const e = employes.find(emp => emp.id === selectedEmploye);
+    return e ? `${e.prenom} ${e.nom}` : '';
+  };
+
   const exportToCSV = () => {
     if (!resumeData?.jours?.length) { alert('Aucune donnée à exporter'); return; }
     const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
+    const employeName = getSelectedEmployeName();
     const sep = ';';
-    const headers = ['Date', 'Tickets', 'Théorique (DH)', 'Remis (DH)', 'Écart (DH)', 'Status'];
+    const headers = ['Date', 'Employé', 'Tickets', 'Théorique (DH)', 'Remis (DH)', 'Écart (DH)', 'Status'];
     const rows = resumeData.jours.map(j => [
       formatDate(j.date),
+      employeName,
       j.nombreTickets,
       j.montantTheorique?.toFixed(2) || '0.00',
       j.montantRemis !== null && j.montantRemis !== undefined ? j.montantRemis.toFixed(2) : 'Non saisi',
@@ -174,7 +182,7 @@ export default function ComptabilitePage() {
       j.estValide ? (j.ecart >= 0 ? 'OK' : 'Déficit') : 'En attente'
     ]);
     rows.push([
-      'TOTAL', resumeData.totalTickets,
+      'TOTAL', employeName, resumeData.totalTickets,
       resumeData.totalTheorique?.toFixed(2) || '0.00',
       resumeData.totalRemis?.toFixed(2) || '0.00',
       resumeData.totalEcart?.toFixed(2) || '0.00',
@@ -185,29 +193,32 @@ export default function ComptabilitePage() {
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.csv`;
+    const employeSuffix = selectedEmploye ? `_${employeName.replace(/\s+/g, '_')}` : '';
+    link.download = `comptabilite_${hammamName.replace(/\s+/g, '_')}${employeSuffix}_${dateDebut}_${dateFin}.csv`;
     link.style.visibility = 'hidden';
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
   const exportToExcel = () => {
     if (!resumeData?.jours?.length) { alert('Aucune donnée à exporter'); return; }
+    const employeName = getSelectedEmployeName();
     const data = resumeData.jours.map(j => ({
-      'Date': j.date, 'Tickets': j.nombreTickets, 'Théorique (DH)': j.montantTheorique || 0,
+      'Date': j.date, 'Employé': employeName, 'Tickets': j.nombreTickets, 'Théorique (DH)': j.montantTheorique || 0,
       'Remis (DH)': j.montantRemis ?? 'Non saisi', 'Écart (DH)': j.ecart ?? 'N/A',
       'Status': j.estValide ? (j.ecart >= 0 ? 'OK' : 'Déficit') : 'En attente'
     }));
-    data.push({ 'Date': 'TOTAL', 'Tickets': resumeData.totalTickets, 'Théorique (DH)': resumeData.totalTheorique, 'Remis (DH)': resumeData.totalRemis, 'Écart (DH)': resumeData.totalEcart, 'Status': '' });
+    data.push({ 'Date': 'TOTAL', 'Employé': employeName, 'Tickets': resumeData.totalTickets, 'Théorique (DH)': resumeData.totalTheorique, 'Remis (DH)': resumeData.totalRemis, 'Écart (DH)': resumeData.totalEcart, 'Status': '' });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Comptabilité');
     const hammamName = hammams.find(h => h.id === selectedHammam)?.nom || 'hammam';
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `comptabilite_${hammamName.replace(/\s+/g, '_')}_${dateDebut}_${dateFin}.xlsx`;
+    const employeSuffix = selectedEmploye ? `_${employeName.replace(/\s+/g, '_')}` : '';
+    link.download = `comptabilite_${hammamName.replace(/\s+/g, '_')}${employeSuffix}_${dateDebut}_${dateFin}.xlsx`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
