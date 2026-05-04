@@ -94,10 +94,15 @@ export default function ComptabilitePage() {
 
   const saveInlineEdit = async (goToNext = false) => {
     if (!inlineEdit || !inlineEdit.value) return;
+    if (!selectedEmploye) {
+      alert("Veuillez sélectionner un employé avant de saisir le remis. Le calcul de l'écart est par employé.");
+      return;
+    }
     setSaving(true);
     try {
       await api.post('/comptabilite/versement', {
         hammamId: selectedHammam,
+        employeId: selectedEmploye,
         date: inlineEdit.date,
         montantRemis: parseFloat(inlineEdit.value),
         commentaire: inlineEdit.commentaire || null
@@ -119,9 +124,9 @@ export default function ComptabilitePage() {
 
   const viewJourDetail = async (date) => {
     try {
-      const response = await api.get('/comptabilite/jour-detail', {
-        params: { hammamId: selectedHammam, date }
-      });
+      const params = { hammamId: selectedHammam, date };
+      if (selectedEmploye) params.employeId = selectedEmploye;
+      const response = await api.get('/comptabilite/jour-detail', { params });
       setJourDetail(response.data);
       setShowDetailModal(true);
     } catch (error) {
@@ -388,12 +393,20 @@ export default function ComptabilitePage() {
                         </button>
                       </div>
                     ) : (
-                      <div className="text-right cursor-pointer hover:bg-slate-600/50 rounded px-2 py-1 -mr-2"
-                        onClick={() => startInlineEdit(jour, idx)}>
+                      <div
+                        className={`text-right rounded px-2 py-1 -mr-2 ${
+                          selectedEmploye
+                            ? 'cursor-pointer hover:bg-slate-600/50'
+                            : 'cursor-not-allowed opacity-60'
+                        }`}
+                        onClick={() => selectedEmploye && startInlineEdit(jour, idx)}
+                        title={!selectedEmploye ? "Sélectionnez un employé pour saisir son remis" : ""}>
                         {jour.montantRemis !== null && jour.montantRemis !== undefined ? (
                           <span className="text-lg font-semibold text-yellow-400">{formatMoney(jour.montantRemis)}</span>
-                        ) : (
+                        ) : selectedEmploye ? (
                           <span className="text-emerald-400 underline italic">Saisir...</span>
+                        ) : (
+                          <span className="text-slate-500 italic text-sm">Choisir employé</span>
                         )}
                       </div>
                     )}
