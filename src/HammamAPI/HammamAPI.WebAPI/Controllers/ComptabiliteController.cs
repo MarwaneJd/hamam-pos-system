@@ -38,12 +38,16 @@ public class ComptabiliteController : ControllerBase
         var from = DateTime.SpecifyKind(dateDebut.Date, DateTimeKind.Utc);
         var to = DateTime.SpecifyKind(dateFin.Date.AddDays(1), DateTimeKind.Utc);
 
-        // Tickets du hammam : JAMAIS filtrés par employé. Le théorique reste au niveau du hammam.
-        // Seul le remis est par employé.
-        var tickets = await _context.Tickets
+        // Tickets : filtrés par employé si fourni (théorique par employé),
+        // sinon tous les tickets du hammam (vue globale)
+        var ticketsQuery = _context.Tickets
             .Include(t => t.TypeTicket)
-            .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to)
-            .ToListAsync();
+            .Where(t => t.HammamId == hammamId && t.CreatedAt >= from && t.CreatedAt < to);
+
+        if (employeId.HasValue)
+            ticketsQuery = ticketsQuery.Where(t => t.EmployeId == employeId.Value);
+
+        var tickets = await ticketsQuery.ToListAsync();
 
         // Versements : filtrés par employé si fourni (vue par employé),
         // sinon tous les versements du hammam (vue globale, agrégation).
@@ -170,11 +174,16 @@ public class ComptabiliteController : ControllerBase
         if (hammam == null)
             return NotFound("Hammam non trouvé");
 
-        // Tickets : jamais filtrés par employé (vue hammam complète pour ce jour)
-        var tickets = await _context.Tickets
+        // Tickets : filtrés par employé si fourni
+        var ticketsQuery = _context.Tickets
             .Include(t => t.TypeTicket)
             .Include(t => t.Employe)
-            .Where(t => t.HammamId == hammamId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
+            .Where(t => t.HammamId == hammamId && t.CreatedAt >= jour && t.CreatedAt < jourFin);
+
+        if (employeId.HasValue)
+            ticketsQuery = ticketsQuery.Where(t => t.EmployeId == employeId.Value);
+
+        var tickets = await ticketsQuery
             .OrderBy(t => t.CreatedAt)
             .ToListAsync();
 
@@ -231,10 +240,11 @@ public class ComptabiliteController : ControllerBase
         if (hammam == null)
             return NotFound("Hammam non trouvé");
 
-        // Théorique = total des tickets du hammam pour ce jour (jamais filtré par employé,
-        // les tickets restent au niveau du hammam — seul le remis est par employé)
+        // Théorique par employé : seuls les tickets vendus par cet employé comptent
         var tickets = await _context.Tickets
-            .Where(t => t.HammamId == dto.HammamId && t.CreatedAt >= jour && t.CreatedAt < jourFin)
+            .Where(t => t.HammamId == dto.HammamId
+                     && t.EmployeId == dto.EmployeId.Value
+                     && t.CreatedAt >= jour && t.CreatedAt < jourFin)
             .ToListAsync();
 
         var montantTheorique = tickets.Sum(t => t.Prix);
