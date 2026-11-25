@@ -27,6 +27,24 @@ public class EmployeProfileDto
     public string HammamNom { get; set; } = "";
 }
 
+/// <summary>
+/// Accès hors ligne d'un employé, envoyé uniquement aux postes authentifiés du même hammam.
+/// PasswordHash est le hash BCrypt (jamais le mot de passe) : il permet au poste de vérifier
+/// le mot de passe sans connexion internet.
+/// </summary>
+public record OfflineCredentialDto(
+    Guid Id,
+    string Username,
+    string Prenom,
+    string Nom,
+    string? Icone,
+    Guid HammamId,
+    string HammamNom,
+    string HammamNomArabe,
+    int HammamPrefixeTicket,
+    string PasswordHash
+);
+
 // ==================== EMPLOYE DTOs ====================
 
 public record EmployeDto(

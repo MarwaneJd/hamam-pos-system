@@ -3,7 +3,9 @@ using HammamDesktop.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,28 +18,55 @@ public interface IAuthService
 {
     Task<LoginResult> LoginAsync(string username, string password);
     Task LogoutAsync();
+
+    /// <summary>Supprime la session sans naviguer (fermeture de la fenêtre).</summary>
+    Task ClearSessionAsync();
+
     Task<bool> HasValidSessionAsync();
     Task<LocalSession?> GetCurrentSessionAsync();
+
+    /// <summary>
+    /// Renvoie un token JWT utilisable. Si le token est "offline" ou expiré et que la
+    /// connexion est disponible, ré-authentifie silencieusement avec le mot de passe
+    /// chiffré DPAPI. Renvoie null si aucun token valide ne peut être obtenu.
+    /// </summary>
+    Task<string?> EnsureValidTokenAsync(bool forceRefresh = false);
+
+    /// <summary>
+    /// Télécharge les accès hors ligne de tous les employés du hammam
+    /// (pour que chaque employé puisse se connecter hors ligne sur n'importe quel poste).
+    /// </summary>
+    Task RefreshOfflineCredentialsAsync(bool force = false);
+
+    /// <summary>
+    /// Token pour la synchronisation en arrière-plan : celui de la session ouverte, ou, si personne
+    /// n'est connecté (écran de connexion, appli fermée puis relancée), un token obtenu avec les accès
+    /// chiffrés d'un employé déjà connu sur ce poste. Les tickets partent ainsi même sans session.
+    /// </summary>
+    Task<string?> GetSyncTokenAsync(bool forceRefresh = false);
 }
 
 public interface ITicketService
 {
     Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync();
-    Task<string> CreateTicketAsync(LocalTicket ticket);
     Task<string> CreateTicketWithNextNumberAsync(LocalTicket ticket, int hammamPrefixeTicket);
     Task<string> GetNextTicketNumberAsync(Guid hammamId, int hammamPrefixeTicket);
     Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId);
-    Task<int> GetTotalTicketCountAsync();
-    Task<int> GetTotalTicketCountAsync(Guid hammamId);
-    Task<int> GetTodayCountFromServerAsync(Guid hammamId);
-    Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
-    Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds);
+    Task<List<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100);
+    Task MarkAsSyncedAsync(IReadOnlyCollection<Guid> ticketIds);
+    Task MarkSyncFailedAsync(IReadOnlyCollection<Guid> ticketIds, string reason);
 }
 
 public interface ISyncService
 {
     void StartBackgroundSync();
+
+    /// <summary>Synchronise TOUS les tickets en attente (par lots successifs).</summary>
     Task SyncNowAsync();
+
+    /// <summary>Déclenche une synchro en arrière-plan si la connexion est disponible (non bloquant).</summary>
+    void RequestSync();
+
     Task<int> GetPendingCountAsync();
     event EventHandler<SyncEventArgs>? SyncCompleted;
 }
@@ -49,7 +78,12 @@ public interface IAudioService
 
 public interface IConnectivityService
 {
+    /// <summary>Vérifie la connexion (appel réseau, 2 s max) et met à jour <see cref="IsOnline"/>.</summary>
     Task<bool> CheckConnectivityAsync();
+
+    /// <summary>Dernier état connu, sans appel réseau (pour les chemins critiques comme la vente).</summary>
+    bool IsOnline { get; }
+
     event EventHandler<bool>? ConnectivityChanged;
 }
 
@@ -63,7 +97,54 @@ public class SyncEventArgs : EventArgs
 {
     public int SyncedCount { get; set; }
     public int ErrorCount { get; set; }
+    public int PendingCount { get; set; }
     public bool Success { get; set; }
+}
+
+internal record LoginResponse(
+    string Token,
+    string RefreshToken,
+    DateTime ExpiresAt,
+    EmployeDto Employe
+);
+
+internal record EmployeDto(
+    Guid Id,
+    string Username,
+    string Nom,
+    string Prenom,
+    Guid HammamId,
+    string HammamNom,
+    string HammamNomArabe,
+    int HammamPrefixeTicket,
+    string Langue,
+    string Role,
+    bool Actif,
+    DateTime CreatedAt,
+    DateTime? LastLoginAt
+);
+
+internal record OfflineCredentialDto(
+    Guid Id,
+    string Username,
+    string Prenom,
+    string Nom,
+    string? Icone,
+    Guid HammamId,
+    string HammamNom,
+    string HammamNomArabe,
+    int HammamPrefixeTicket,
+    string PasswordHash
+);
+
+internal static class ApiClient
+{
+    public static HttpClient CreateAuthorized(IHttpClientFactory factory, string token)
+    {
+        var client = factory.CreateClient("HammamApi");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
 }
 
 #endregion
@@ -71,22 +152,32 @@ public class SyncEventArgs : EventArgs
 #region Implementations
 
 /// <summary>
-/// Service d'authentification
+/// Service d'authentification : connexion en ligne / hors ligne transparente,
+/// ré-authentification silencieuse au retour de la connexion.
 /// </summary>
 public class AuthService : IAuthService
 {
-    private readonly LocalDbContext _db;
+    public const string OfflineToken = "offline-session";
+
+    private static readonly TimeSpan CredentialsRefreshInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan TokenSafetyMargin = TimeSpan.FromMinutes(5);
+
+    private readonly IDbContextFactory<LocalDbContext> _dbFactory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SessionSettings _sessionSettings;
     private readonly IConnectivityService _connectivityService;
+    private readonly SemaphoreSlim _reauthLock = new(1, 1);
+    private DateTime _lastCredentialsRefreshUtc = DateTime.MinValue;
+    private string? _backgroundToken;
+    private DateTime _backgroundTokenExpiresUtc = DateTime.MinValue;
 
     public AuthService(
-        LocalDbContext db,
+        IDbContextFactory<LocalDbContext> dbFactory,
         IHttpClientFactory httpClientFactory,
         IOptions<SessionSettings> sessionSettings,
         IConnectivityService connectivityService)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _httpClientFactory = httpClientFactory;
         _sessionSettings = sessionSettings.Value;
         _connectivityService = connectivityService;
@@ -98,109 +189,43 @@ public class AuthService : IAuthService
         return Convert.ToHexString(bytes);
     }
 
+    private static bool IsRealToken(string? token) =>
+        !string.IsNullOrEmpty(token) && token != OfflineToken;
+
     public async Task<LoginResult> LoginAsync(string username, string password)
     {
+        var normalizedUsername = username.Trim();
+
         try
         {
-            var normalizedUsername = username.Trim();
-
             if (!await _connectivityService.CheckConnectivityAsync())
             {
                 return await TryOfflineLoginAsync(normalizedUsername, password);
             }
 
-            var client = _httpClientFactory.CreateClient("HammamApi");
-
-            var response = await client.PostAsJsonAsync("api/auth/login", new
-            {
-                Username = normalizedUsername,
-                Password = password
-            });
-
-            if (!response.IsSuccessStatusCode)
+            var (login, invalidCredentials) = await CallLoginApiAsync(normalizedUsername, password);
+            if (invalidCredentials)
             {
                 return new LoginResult(false, "Identifiants invalides");
             }
 
-            var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
-
-            if (result == null)
+            if (login == null)
             {
-                return new LoginResult(false, "Réponse invalide du serveur");
+                // Serveur joignable mais réponse inexploitable → on tente le hors ligne
+                return await TryOfflineLoginAsync(normalizedUsername, password);
             }
 
-            // Supprimer les anciennes sessions
-            var oldSessions = await _db.Sessions.ToListAsync();
-            _db.Sessions.RemoveRange(oldSessions);
+            await SaveOnlineSessionAsync(login, password);
 
-            // Créer la nouvelle session
-            var session = new LocalSession
-            {
-                Id = Guid.NewGuid(),
-                EmployeId = result.Employe.Id,
-                Username = result.Employe.Username,
-                Nom = result.Employe.Nom,
-                Prenom = result.Employe.Prenom,
-                HammamId = result.Employe.HammamId,
-                HammamNom = result.Employe.HammamNom,
-                HammamNomArabe = result.Employe.HammamNomArabe,
-                HammamPrefixeTicket = result.Employe.HammamPrefixeTicket,
-                Token = result.Token,
-                ExpiresAt = result.ExpiresAt,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _db.Sessions.Add(session);
-
-            // Mettre en cache le hash du mot de passe pour connexion hors ligne
-            var loginUsername = (result.Employe.Username ?? normalizedUsername).Trim();
-            var loweredLoginUsername = loginUsername.ToLower();
-
-            var cachedProfile = await _db.EmployeProfiles
-                .FirstOrDefaultAsync(p => p.Username.ToLower() == loweredLoginUsername)
-                ?? await _db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == result.Employe.Id);
-
-            if (cachedProfile != null)
-            {
-                cachedProfile.Username = loginUsername;
-                cachedProfile.Prenom = result.Employe.Prenom;
-                cachedProfile.Nom = result.Employe.Nom;
-                cachedProfile.HammamId = result.Employe.HammamId;
-                cachedProfile.HammamNom = result.Employe.HammamNom;
-                cachedProfile.HammamNomArabe = result.Employe.HammamNomArabe;
-                cachedProfile.HammamPrefixeTicket = result.Employe.HammamPrefixeTicket;
-                cachedProfile.PasswordHash = ComputePasswordHash(password);
-                cachedProfile.CachedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                _db.EmployeProfiles.Add(new LocalEmployeProfile
-                {
-                    Id = result.Employe.Id,
-                    Username = loginUsername,
-                    Prenom = result.Employe.Prenom,
-                    Nom = result.Employe.Nom,
-                    Icone = "User1",
-                    HammamId = result.Employe.HammamId,
-                    HammamNom = result.Employe.HammamNom,
-                    HammamNomArabe = result.Employe.HammamNomArabe,
-                    HammamPrefixeTicket = result.Employe.HammamPrefixeTicket,
-                    PasswordHash = ComputePasswordHash(password),
-                    CachedAt = DateTime.UtcNow
-                });
-            }
-
-            await _db.SaveChangesAsync();
+            // Récupérer les accès hors ligne de tous les employés du hammam (non bloquant)
+            _ = RefreshOfflineCredentialsAsync(force: true);
 
             return new LoginResult(true);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            return await TryOfflineLoginAsync(username, password);
-        }
-        catch (TaskCanceledException)
-        {
-            return await TryOfflineLoginAsync(username, password);
+            Serilog.Log.Warning(ex, "Serveur injoignable pendant la connexion, bascule hors ligne");
+            return await TryOfflineLoginAsync(normalizedUsername, password);
         }
         catch (Exception ex)
         {
@@ -209,48 +234,131 @@ public class AuthService : IAuthService
         }
     }
 
+    /// <summary>
+    /// Appelle api/auth/login. Renvoie (null, true) si les identifiants sont refusés,
+    /// (null, false) si la réponse est inexploitable. Lève HttpRequestException /
+    /// TaskCanceledException si le serveur est injoignable.
+    /// </summary>
+    private async Task<(LoginResponse? Login, bool InvalidCredentials)> CallLoginApiAsync(string username, string password)
+    {
+        var client = _httpClientFactory.CreateClient("HammamApi");
+        var response = await client.PostAsJsonAsync("api/auth/login", new { Username = username, Password = password });
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest)
+        {
+            return (null, true);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException($"Login API a répondu {(int)response.StatusCode}");
+        }
+
+        return (await response.Content.ReadFromJsonAsync<LoginResponse>(), false);
+    }
+
+    private async Task SaveOnlineSessionAsync(LoginResponse login, string password)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        db.Sessions.RemoveRange(await db.Sessions.ToListAsync());
+
+        var emp = login.Employe;
+        db.Sessions.Add(new LocalSession
+        {
+            Id = Guid.NewGuid(),
+            EmployeId = emp.Id,
+            Username = emp.Username,
+            Nom = emp.Nom,
+            Prenom = emp.Prenom,
+            HammamId = emp.HammamId,
+            HammamNom = emp.HammamNom,
+            HammamNomArabe = emp.HammamNomArabe,
+            HammamPrefixeTicket = emp.HammamPrefixeTicket,
+            Token = login.Token,
+            ExpiresAt = login.ExpiresAt,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // Le profil est identifié par l'ID employé (et non par le username :
+        // le même username existe dans plusieurs hammams avec des mots de passe différents).
+        var profile = await db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == emp.Id);
+        if (profile == null)
+        {
+            profile = new LocalEmployeProfile { Id = emp.Id, Icone = "User1" };
+            db.EmployeProfiles.Add(profile);
+        }
+
+        profile.Username = emp.Username;
+        profile.Prenom = emp.Prenom;
+        profile.Nom = emp.Nom;
+        profile.HammamId = emp.HammamId;
+        profile.HammamNom = emp.HammamNom;
+        profile.HammamNomArabe = emp.HammamNomArabe;
+        profile.HammamPrefixeTicket = emp.HammamPrefixeTicket;
+        profile.PasswordHash = ComputePasswordHash(password);
+        profile.EncryptedPassword = CryptoHelper.Protect(password);
+        profile.CachedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+    }
+
     private async Task<LoginResult> TryOfflineLoginAsync(string username, string password)
     {
         try
         {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+
             var normalizedUsername = username.Trim().ToLower();
-            var cachedProfile = await _db.EmployeProfiles
-                .FirstOrDefaultAsync(p => p.Username.ToLower() == normalizedUsername);
+            var candidates = await db.EmployeProfiles
+                .Where(p => p.Username.ToLower() == normalizedUsername)
+                .ToListAsync();
 
-            if (cachedProfile == null || string.IsNullOrEmpty(cachedProfile.PasswordHash))
+            if (candidates.Count == 0)
             {
-                return new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
+                return new LoginResult(false,
+                    "Impossible de joindre le serveur et ce profil n'est pas encore activé hors ligne sur ce poste.");
             }
 
-            // Vérifier le mot de passe contre le hash en cache
-            var hash = ComputePasswordHash(password);
-            if (hash != cachedProfile.PasswordHash)
+            var localHash = ComputePasswordHash(password);
+            var match = candidates.FirstOrDefault(p => !string.IsNullOrEmpty(p.PasswordHash) && p.PasswordHash == localHash);
+
+            // Sinon : vérifier contre le hash serveur (BCrypt) reçu lors de la dernière synchro.
+            // Permet à un employé de se connecter hors ligne sur un poste où il ne s'est jamais connecté.
+            if (match == null)
             {
-                return new LoginResult(false, "Identifiants invalides");
+                match = await Task.Run(() => candidates.FirstOrDefault(p => VerifyServerHash(password, CryptoHelper.Unprotect(p.ServerPasswordHash))));
             }
 
-            // Connexion hors ligne réussie — créer une session locale
-            var oldSessions = await _db.Sessions.ToListAsync();
-            _db.Sessions.RemoveRange(oldSessions);
+            if (match == null)
+            {
+                return candidates.Any(p => !string.IsNullOrEmpty(p.PasswordHash) || !string.IsNullOrEmpty(p.ServerPasswordHash))
+                    ? new LoginResult(false, "Identifiants invalides")
+                    : new LoginResult(false, "Impossible de joindre le serveur. Vérifiez votre connexion.");
+            }
 
-            var session = new LocalSession
+            // Mémoriser pour la ré-auth silencieuse au retour de la connexion
+            match.PasswordHash = localHash;
+            match.EncryptedPassword = CryptoHelper.Protect(password);
+
+            db.Sessions.RemoveRange(await db.Sessions.ToListAsync());
+            db.Sessions.Add(new LocalSession
             {
                 Id = Guid.NewGuid(),
-                EmployeId = cachedProfile.Id,
-                Username = cachedProfile.Username,
-                Nom = cachedProfile.Nom,
-                Prenom = cachedProfile.Prenom,
-                HammamId = cachedProfile.HammamId,
-                HammamNom = cachedProfile.HammamNom,
-                HammamNomArabe = cachedProfile.HammamNomArabe,
-                HammamPrefixeTicket = cachedProfile.HammamPrefixeTicket,
-                Token = "offline-session",
+                EmployeId = match.Id,
+                Username = match.Username,
+                Nom = match.Nom,
+                Prenom = match.Prenom,
+                HammamId = match.HammamId,
+                HammamNom = match.HammamNom,
+                HammamNomArabe = match.HammamNomArabe,
+                HammamPrefixeTicket = match.HammamPrefixeTicket,
+                Token = OfflineToken,
                 ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours),
                 CreatedAt = DateTime.UtcNow
-            };
+            });
 
-            _db.Sessions.Add(session);
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
 
             Serilog.Log.Information("Connexion hors ligne réussie pour {Username}", username);
             return new LoginResult(true);
@@ -262,13 +370,233 @@ public class AuthService : IAuthService
         }
     }
 
+    private static bool VerifyServerHash(string password, string? bcryptHash)
+    {
+        if (string.IsNullOrEmpty(bcryptHash))
+            return false;
+
+        try
+        {
+            return BCrypt.Net.BCrypt.Verify(password, bcryptHash);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Hash serveur invalide en cache");
+            return false;
+        }
+    }
+
+    public async Task<string?> EnsureValidTokenAsync(bool forceRefresh = false)
+    {
+        var session = await ReadSessionAsync();
+        if (session == null)
+            return null;
+
+        if (!forceRefresh && IsTokenUsable(session))
+            return session.Token;
+
+        if (!await _connectivityService.CheckConnectivityAsync())
+            return null;
+
+        await _reauthLock.WaitAsync();
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            session = await db.Sessions.FirstOrDefaultAsync();
+            if (session == null)
+                return null;
+
+            // Un autre appel a peut-être déjà rafraîchi le token pendant l'attente
+            if (!forceRefresh && IsTokenUsable(session))
+                return session.Token;
+
+            var profile = await db.EmployeProfiles.FirstOrDefaultAsync(p => p.Id == session.EmployeId);
+            var password = CryptoHelper.Unprotect(profile?.EncryptedPassword);
+            if (password == null)
+            {
+                Serilog.Log.Warning("Aucun mot de passe chiffré pour {Username} : ré-authentification impossible", session.Username);
+                return IsRealToken(session.Token) ? session.Token : null;
+            }
+
+            var (login, invalidCredentials) = await CallLoginApiAsync(session.Username, password);
+            if (invalidCredentials || login == null)
+            {
+                Serilog.Log.Warning("Ré-authentification refusée pour {Username} (mot de passe changé sur le serveur ?)", session.Username);
+                return null;
+            }
+
+            if (login.Employe.Id != session.EmployeId)
+            {
+                Serilog.Log.Warning(
+                    "Ré-authentification : le serveur a renvoyé l'employé {Returned} au lieu de {Expected}, token ignoré",
+                    login.Employe.Id, session.EmployeId);
+                return null;
+            }
+
+            session.Token = login.Token;
+            session.ExpiresAt = login.ExpiresAt;
+            await db.SaveChangesAsync();
+
+            Serilog.Log.Information("Token rafraîchi silencieusement pour {Username}", session.Username);
+            return session.Token;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            Serilog.Log.Debug(ex, "Ré-authentification impossible (serveur injoignable)");
+            return null;
+        }
+        finally
+        {
+            _reauthLock.Release();
+        }
+    }
+
+    public async Task<string?> GetSyncTokenAsync(bool forceRefresh = false)
+    {
+        if (await ReadSessionAsync() != null)
+            return await EnsureValidTokenAsync(forceRefresh);
+
+        if (!forceRefresh && _backgroundToken != null && _backgroundTokenExpiresUtc > DateTime.UtcNow + TokenSafetyMargin)
+            return _backgroundToken;
+
+        if (!await _connectivityService.CheckConnectivityAsync())
+            return null;
+
+        await _reauthLock.WaitAsync();
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var candidates = await db.EmployeProfiles.AsNoTracking()
+                .Where(p => p.EncryptedPassword != null && p.EncryptedPassword != "")
+                .OrderByDescending(p => p.CachedAt)
+                .Take(3)
+                .ToListAsync();
+
+            foreach (var profile in candidates)
+            {
+                var password = CryptoHelper.Unprotect(profile.EncryptedPassword);
+                if (password == null) continue;
+
+                var (login, _) = await CallLoginApiAsync(profile.Username, password);
+                if (login == null || login.Employe.Id != profile.Id) continue;
+
+                _backgroundToken = login.Token;
+                _backgroundTokenExpiresUtc = login.ExpiresAt;
+                Serilog.Log.Information("Token de synchronisation obtenu sans session ouverte ({Username})", profile.Username);
+                return _backgroundToken;
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            Serilog.Log.Debug(ex, "Token de synchronisation indisponible (serveur injoignable)");
+            return null;
+        }
+        finally
+        {
+            _reauthLock.Release();
+        }
+    }
+
+    private static bool IsTokenUsable(LocalSession session) =>
+        IsRealToken(session.Token) && session.ExpiresAt > DateTime.UtcNow + TokenSafetyMargin;
+
+    public async Task RefreshOfflineCredentialsAsync(bool force = false)
+    {
+        if (!force && DateTime.UtcNow - _lastCredentialsRefreshUtc < CredentialsRefreshInterval)
+            return;
+
+        try
+        {
+            var token = await EnsureValidTokenAsync();
+            if (token == null)
+                return;
+
+            var session = await ReadSessionAsync();
+            if (session == null)
+                return;
+
+            var client = ApiClient.CreateAuthorized(_httpClientFactory, token);
+            var response = await client.GetAsync("api/auth/offline-credentials");
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                Serilog.Log.Debug("Le serveur ne fournit pas encore les accès hors ligne (endpoint absent)");
+                _lastCredentialsRefreshUtc = DateTime.UtcNow;
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Serilog.Log.Warning("Récupération des accès hors ligne échouée: {Status}", response.StatusCode);
+                return;
+            }
+
+            var credentials = await response.Content.ReadFromJsonAsync<List<OfflineCredentialDto>>() ?? new();
+
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var existing = await db.EmployeProfiles.ToListAsync();
+            var receivedIds = credentials.Select(c => c.Id).ToHashSet();
+
+            foreach (var cred in credentials)
+            {
+                var profile = existing.FirstOrDefault(p => p.Id == cred.Id);
+                if (profile == null)
+                {
+                    profile = new LocalEmployeProfile { Id = cred.Id };
+                    db.EmployeProfiles.Add(profile);
+                }
+                else if (!string.IsNullOrEmpty(profile.ServerPasswordHash)
+                         && CryptoHelper.Unprotect(profile.ServerPasswordHash) != cred.PasswordHash)
+                {
+                    // Mot de passe changé sur le serveur : l'ancien ne doit plus ouvrir de session hors ligne
+                    profile.PasswordHash = "";
+                    profile.EncryptedPassword = null;
+                }
+
+                profile.Username = cred.Username;
+                profile.Prenom = cred.Prenom;
+                profile.Nom = cred.Nom;
+                profile.Icone = string.IsNullOrEmpty(cred.Icone) ? "User1" : cred.Icone;
+                profile.HammamId = cred.HammamId;
+                profile.HammamNom = cred.HammamNom;
+                profile.HammamNomArabe = cred.HammamNomArabe;
+                profile.HammamPrefixeTicket = cred.HammamPrefixeTicket;
+                // Chiffré DPAPI (compte Windows) : une copie de la base sortie du PC est inexploitable
+                profile.ServerPasswordHash = CryptoHelper.Protect(cred.PasswordHash);
+                profile.CachedAt = DateTime.UtcNow;
+            }
+
+            // Employés désactivés/supprimés de CE hammam : retirer l'accès hors ligne
+            var revoked = existing
+                .Where(p => p.HammamId == session.HammamId && !receivedIds.Contains(p.Id) && p.Id != session.EmployeId)
+                .ToList();
+            db.EmployeProfiles.RemoveRange(revoked);
+
+            await db.SaveChangesAsync();
+            _lastCredentialsRefreshUtc = DateTime.UtcNow;
+
+            Serilog.Log.Information(
+                "Accès hors ligne mis à jour: {Count} employés, {Revoked} révoqués",
+                credentials.Count, revoked.Count);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Impossible de mettre à jour les accès hors ligne");
+        }
+    }
+
+    private async Task<LocalSession?> ReadSessionAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.Sessions.AsNoTracking().FirstOrDefaultAsync();
+    }
+
     public async Task LogoutAsync()
     {
-        var sessions = await _db.Sessions.ToListAsync();
-        _db.Sessions.RemoveRange(sessions);
-        await _db.SaveChangesAsync();
+        await ClearSessionAsync();
 
-        // Retour à l'écran de login
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             foreach (System.Windows.Window window in System.Windows.Application.Current.Windows)
@@ -284,138 +612,102 @@ public class AuthService : IAuthService
         });
     }
 
-    /// <summary>
-    /// Supprime la session sans naviguer (utilisé à la fermeture de la fenêtre)
-    /// </summary>
     public async Task ClearSessionAsync()
     {
-        var sessions = await _db.Sessions.ToListAsync();
-        _db.Sessions.RemoveRange(sessions);
-        await _db.SaveChangesAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        db.Sessions.RemoveRange(await db.Sessions.ToListAsync());
+        await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Au démarrage : une session restante (fermeture brutale) n'est reprise que si elle
+    /// n'est pas expirée, ou si on est hors ligne (pour ne jamais bloquer la caisse).
+    /// </summary>
     public async Task<bool> HasValidSessionAsync()
     {
-        var session = await _db.Sessions.FirstOrDefaultAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var session = await db.Sessions.FirstOrDefaultAsync();
 
         if (session == null)
             return false;
 
-        // Vérifier l'expiration (8 heures)
-        if (session.ExpiresAt < DateTime.UtcNow)
-        {
-            // Si hors ligne, prolonger la session automatiquement
-            if (!await _connectivityService.CheckConnectivityAsync())
-            {
-                session.ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours);
-                await _db.SaveChangesAsync();
-                Serilog.Log.Information("Session prolongée automatiquement (hors ligne)");
-                return true;
-            }
+        if (session.ExpiresAt >= DateTime.UtcNow)
+            return true;
 
-            _db.Sessions.Remove(session);
-            await _db.SaveChangesAsync();
-            return false;
+        if (!await _connectivityService.CheckConnectivityAsync())
+        {
+            session.ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours);
+            await db.SaveChangesAsync();
+            Serilog.Log.Information("Session prolongée automatiquement (hors ligne)");
+            return true;
         }
 
-        return true;
+        db.Sessions.Remove(session);
+        await db.SaveChangesAsync();
+        return false;
     }
 
-    public async Task<LocalSession?> GetCurrentSessionAsync()
-    {
-        var session = await _db.Sessions.FirstOrDefaultAsync();
-
-        if (session != null && session.ExpiresAt < DateTime.UtcNow)
-        {
-            // Si hors ligne, prolonger la session automatiquement
-            if (!await _connectivityService.CheckConnectivityAsync())
-            {
-                session.ExpiresAt = DateTime.UtcNow.AddHours(_sessionSettings.ExpirationHours);
-                await _db.SaveChangesAsync();
-                Serilog.Log.Information("Session prolongée automatiquement (hors ligne)");
-                return session;
-            }
-
-            // Session expirée et en ligne
-            await LogoutAsync();
-            return null;
-        }
-
-        return session;
-    }
-
-    private record LoginResponse(
-        string Token,
-        string RefreshToken,
-        DateTime ExpiresAt,
-        EmployeDto Employe
-    );
-
-    private record EmployeDto(
-        Guid Id,
-        string Username,
-        string Nom,
-        string Prenom,
-        Guid HammamId,
-        string HammamNom,
-        string HammamNomArabe,
-        int HammamPrefixeTicket,
-        string Langue,
-        string Role,
-        bool Actif,
-        DateTime CreatedAt,
-        DateTime? LastLoginAt
-    );
+    /// <summary>
+    /// Pendant l'utilisation, la session n'est jamais coupée sur expiration :
+    /// le token est rafraîchi silencieusement par <see cref="EnsureValidTokenAsync"/>.
+    /// </summary>
+    public Task<LocalSession?> GetCurrentSessionAsync() => ReadSessionAsync();
 }
 
 /// <summary>
-/// Service de gestion des tickets
+/// Service de gestion des tickets (local-first : aucune vente ne dépend du réseau)
 /// </summary>
 public class TicketService : ITicketService
 {
-    private readonly LocalDbContext _db;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConnectivityService _connectivityService;
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _hammamLocks = new();
-    private bool _typesSynced = false;
     private const string LastTicketConfigPrefix = "LastTicketNumber:";
     private const string DeviceSuffixConfigKey = "DeviceSuffix";
+    private const string StatusPending = "Pending";
+    private const string StatusSynced = "Synced";
+
+    private static readonly TimeSpan MoroccoOffset = TimeSpan.FromHours(1);
+
+    private readonly IDbContextFactory<LocalDbContext> _dbFactory;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConnectivityService _connectivityService;
+    private readonly IAuthService _authService;
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _hammamLocks = new();
+    private volatile bool _typesSynced;
 
     public TicketService(
-        LocalDbContext db,
+        IDbContextFactory<LocalDbContext> dbFactory,
         IHttpClientFactory httpClientFactory,
-        IConnectivityService connectivityService)
+        IConnectivityService connectivityService,
+        IAuthService authService)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _httpClientFactory = httpClientFactory;
         _connectivityService = connectivityService;
+        _authService = authService;
     }
 
     public async Task<IEnumerable<LocalTypeTicket>> GetTicketTypesAsync()
     {
-        // Si pas encore synchronisé, essayer de charger depuis l'API
         if (!_typesSynced)
         {
             if (await _connectivityService.CheckConnectivityAsync())
             {
                 await SyncTypesFromApiAsync();
             }
-            else
-            {
-                _typesSynced = true;
-            }
+            _typesSynced = true;
         }
-        
-        var types = await _db.TypeTickets.OrderBy(t => t.Ordre).ToListAsync();
-        
-        // Si toujours vide, créer des types par défaut
-        if (!types.Any())
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var types = await db.TypeTickets.AsNoTracking().OrderBy(t => t.Ordre).ToListAsync();
+
+        if (types.Count == 0)
         {
             Serilog.Log.Warning("Aucun type de ticket trouvé, création des types par défaut");
-            await CreateDefaultTypesAsync();
-            types = await _db.TypeTickets.OrderBy(t => t.Ordre).ToListAsync();
+            types = CreateDefaultTypes();
+            db.TypeTickets.AddRange(types);
+            await db.SaveChangesAsync();
+            Serilog.Log.Information("Types de tickets par défaut créés");
         }
-        
+
         return types;
     }
 
@@ -423,120 +715,99 @@ public class TicketService : ITicketService
     {
         try
         {
-            var session = await _db.Sessions.FirstOrDefaultAsync();
+            var session = await _authService.GetCurrentSessionAsync();
             if (session == null) return;
 
-            var client = _httpClientFactory.CreateClient("HammamApi");
-            client.DefaultRequestHeaders.Authorization = 
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
+            var token = await _authService.EnsureValidTokenAsync();
+            if (token == null) return;
 
+            var client = ApiClient.CreateAuthorized(_httpClientFactory, token);
             var response = await client.GetAsync($"api/typetickets/hammam/{session.HammamId}");
-            
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode) return;
+
+            var apiTypes = await response.Content.ReadFromJsonAsync<List<ApiTypeTicket>>();
+            if (apiTypes == null || apiTypes.Count == 0) return;
+
+            var imageDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "HammamPOS", "images", "typetickets");
+            System.IO.Directory.CreateDirectory(imageDir);
+
+            // Télécharger les images AVANT de toucher à la base (la table n'est jamais vide)
+            var newTypes = new List<LocalTypeTicket>();
+            foreach (var apiType in apiTypes)
             {
-                var apiTypes = await response.Content.ReadFromJsonAsync<List<ApiTypeTicket>>();
-                
-                if (apiTypes != null && apiTypes.Any())
+                newTypes.Add(new LocalTypeTicket
                 {
-                    // Supprimer les anciens types
-                    var oldTypes = await _db.TypeTickets.ToListAsync();
-                    _db.TypeTickets.RemoveRange(oldTypes);
-                    await _db.SaveChangesAsync();
-                    _db.ChangeTracker.Clear();
-                    
-                    // Dossier pour cache des images
-                    var imageDir = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "HammamPOS", "images", "typetickets");
-                    System.IO.Directory.CreateDirectory(imageDir);
-
-                    // Ajouter les nouveaux types
-                    foreach (var apiType in apiTypes)
-                    {
-                        string? localImagePath = null;
-
-                        // Télécharger l'image si elle existe
-                        if (!string.IsNullOrEmpty(apiType.ImageUrl))
-                        {
-                            try
-                            {
-                                Uri? imageUri = null;
-                                if (Uri.TryCreate(apiType.ImageUrl, UriKind.Absolute, out var absoluteUri))
-                                {
-                                    imageUri = absoluteUri;
-                                }
-                                else if (client.BaseAddress != null)
-                                {
-                                    imageUri = new Uri(client.BaseAddress, apiType.ImageUrl);
-                                }
-
-                                if (imageUri == null)
-                                    throw new InvalidOperationException($"URL image invalide: {apiType.ImageUrl}");
-
-                                var imageResponse = await client.GetAsync(imageUri);
-                                if (imageResponse.IsSuccessStatusCode)
-                                {
-                                    var ext = System.IO.Path.GetExtension(imageUri.AbsolutePath);
-                                    if (string.IsNullOrEmpty(ext)) ext = ".png";
-                                    var fileName = $"{apiType.Id}{ext}";
-                                    localImagePath = System.IO.Path.Combine(imageDir, fileName);
-                                    
-                                    var imageBytes = await imageResponse.Content.ReadAsByteArrayAsync();
-                                    await System.IO.File.WriteAllBytesAsync(localImagePath, imageBytes);
-                                }
-                            }
-                            catch (Exception imgEx)
-                            {
-                                Serilog.Log.Warning(imgEx, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
-                            }
-                        }
-
-                        _db.TypeTickets.Add(new LocalTypeTicket
-                        {
-                            Id = apiType.Id,
-                            Nom = apiType.Nom,
-                            Prix = apiType.Prix,
-                            Couleur = apiType.Couleur ?? "#3B82F6",
-                            Icone = apiType.Icone ?? "User",
-                            ImageUrl = apiType.ImageUrl,
-                            LocalImagePath = localImagePath,
-                            Ordre = apiType.Ordre
-                        });
-                    }
-                    
-                    await _db.SaveChangesAsync();
-                    Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", apiTypes.Count);
-                }
+                    Id = apiType.Id,
+                    Nom = apiType.Nom,
+                    Prix = apiType.Prix,
+                    Couleur = apiType.Couleur ?? "#3B82F6",
+                    Icone = apiType.Icone ?? "User",
+                    ImageUrl = apiType.ImageUrl,
+                    LocalImagePath = await DownloadImageAsync(client, apiType, imageDir),
+                    Ordre = apiType.Ordre
+                });
             }
-            _typesSynced = true;
+
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            db.TypeTickets.RemoveRange(await db.TypeTickets.ToListAsync());
+            await db.SaveChangesAsync();
+            db.TypeTickets.AddRange(newTypes);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            Serilog.Log.Information("Types de tickets synchronisés depuis l'API: {Count}", newTypes.Count);
         }
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la synchronisation des types de tickets");
-            _db.ChangeTracker.Clear();
-            _typesSynced = true; // Marquer comme tenté pour éviter les boucles
         }
     }
 
-    private async Task CreateDefaultTypesAsync()
+    private static async Task<string?> DownloadImageAsync(HttpClient client, ApiTypeTicket apiType, string imageDir)
     {
-        var defaultTypes = new List<LocalTypeTicket>
+        if (string.IsNullOrEmpty(apiType.ImageUrl))
+            return null;
+
+        try
         {
-            new() { Id = Guid.NewGuid(), Nom = "HOMME", Prix = 15, Couleur = "#3B82F6", Icone = "User", Ordre = 1 },
-            new() { Id = Guid.NewGuid(), Nom = "FEMME", Prix = 15, Couleur = "#EC4899", Icone = "UserCheck", Ordre = 2 },
-            new() { Id = Guid.NewGuid(), Nom = "ENFANT", Prix = 10, Couleur = "#22C55E", Icone = "Baby", Ordre = 3 },
-            new() { Id = Guid.NewGuid(), Nom = "DOUCHE", Prix = 5, Couleur = "#06B6D4", Icone = "Droplets", Ordre = 4 }
-        };
+            Uri? imageUri = Uri.TryCreate(apiType.ImageUrl, UriKind.Absolute, out var absoluteUri)
+                ? absoluteUri
+                : client.BaseAddress != null ? new Uri(client.BaseAddress, apiType.ImageUrl) : null;
 
-        _db.TypeTickets.AddRange(defaultTypes);
-        await _db.SaveChangesAsync();
-        Serilog.Log.Information("Types de tickets par défaut créés");
+            if (imageUri == null)
+                return null;
+
+            var imageResponse = await client.GetAsync(imageUri);
+            if (!imageResponse.IsSuccessStatusCode)
+                return null;
+
+            var ext = System.IO.Path.GetExtension(imageUri.AbsolutePath);
+            if (string.IsNullOrEmpty(ext)) ext = ".png";
+            var localPath = System.IO.Path.Combine(imageDir, $"{apiType.Id}{ext}");
+
+            await System.IO.File.WriteAllBytesAsync(localPath, await imageResponse.Content.ReadAsByteArrayAsync());
+            return localPath;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Impossible de télécharger l'image pour {TypeName}", apiType.Nom);
+            return null;
+        }
     }
 
-    private SemaphoreSlim GetHammamLock(Guid hammamId)
+    private static List<LocalTypeTicket> CreateDefaultTypes() => new()
     {
-        return _hammamLocks.GetOrAdd(hammamId, _ => new SemaphoreSlim(1, 1));
-    }
+        new() { Id = Guid.NewGuid(), Nom = "HOMME", Prix = 15, Couleur = "#3B82F6", Icone = "User", Ordre = 1 },
+        new() { Id = Guid.NewGuid(), Nom = "FEMME", Prix = 15, Couleur = "#EC4899", Icone = "UserCheck", Ordre = 2 },
+        new() { Id = Guid.NewGuid(), Nom = "ENFANT", Prix = 10, Couleur = "#22C55E", Icone = "Baby", Ordre = 3 },
+        new() { Id = Guid.NewGuid(), Nom = "DOUCHE", Prix = 5, Couleur = "#06B6D4", Icone = "Droplets", Ordre = 4 }
+    };
+
+    private SemaphoreSlim GetHammamLock(Guid hammamId) =>
+        _hammamLocks.GetOrAdd(hammamId, _ => new SemaphoreSlim(1, 1));
 
     public async Task<string> CreateTicketWithNextNumberAsync(LocalTicket ticket, int hammamPrefixeTicket)
     {
@@ -547,35 +818,29 @@ public class TicketService : ITicketService
         {
             const int maxAttempts = 5;
 
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            for (var attempt = 1; ; attempt++)
             {
+                // Contexte neuf à chaque tentative : aucun état résiduel après une collision
+                await using var db = await _dbFactory.CreateDbContextAsync();
                 try
                 {
-                    await using var transaction = await _db.Database.BeginTransactionAsync();
+                    await using var transaction = await db.Database.BeginTransactionAsync();
 
-                    var ticketNumber = await ReserveNextTicketNumberInternalAsync(ticket.HammamId, hammamPrefixeTicket);
+                    var ticketNumber = await ReserveNextTicketNumberAsync(db, ticket.HammamId, hammamPrefixeTicket);
                     ticket.TicketNumber = ticketNumber;
 
-                    _db.Tickets.Add(ticket);
-                    await _db.SaveChangesAsync();
-
+                    db.Tickets.Add(ticket);
+                    await db.SaveChangesAsync();
                     await transaction.CommitAsync();
                     return ticketNumber;
                 }
                 catch (DbUpdateException ex) when (IsTicketNumberUniqueCollision(ex) && attempt < maxAttempts)
                 {
-                    _db.Entry(ticket).State = EntityState.Detached;
                     Serilog.Log.Warning(ex,
                         "Collision numéro ticket détectée (tentative {Attempt}/{Max}), retry automatique",
                         attempt, maxAttempts);
                 }
             }
-
-            throw new InvalidOperationException("Impossible de générer un numéro de ticket unique après plusieurs tentatives.");
-        }
-        catch
-        {
-            throw;
         }
         finally
         {
@@ -583,146 +848,65 @@ public class TicketService : ITicketService
         }
     }
 
-    public async Task<string> CreateTicketAsync(LocalTicket ticket)
-    {
-        var session = await _db.Sessions.FirstOrDefaultAsync();
-        var hammamPrefixeTicket = session?.HammamPrefixeTicket ?? 100000;
-        return await CreateTicketWithNextNumberAsync(ticket, hammamPrefixeTicket);
-    }
-
     public async Task<string> GetNextTicketNumberAsync(Guid hammamId, int hammamPrefixeTicket)
     {
-        var lastTicketNumber = await GetLastTicketNumberSnapshotAsync(hammamId, hammamPrefixeTicket);
-        var nextNumericNumber = lastTicketNumber + 1;
-        var deviceSuffix = await GetOrCreateDeviceSuffixAsync();
-        return $"{nextNumericNumber}-{deviceSuffix}";
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var lastTicketNumber = await GetLastTicketNumberSnapshotAsync(db, hammamId, hammamPrefixeTicket);
+        var deviceSuffix = await GetOrCreateDeviceSuffixAsync(db);
+        return $"{lastTicketNumber + 1}-{deviceSuffix}";
     }
 
     public async Task<(int Count, decimal Revenue)> GetTodayStatsAsync(Guid hammamId)
     {
-        // Fuseau horaire du Maroc (UTC+1)
-        // Calculer les bornes du jour local en UTC
-        var moroccoOffset = TimeSpan.FromHours(1);
-        var nowUtc = DateTime.UtcNow;
-        var nowLocal = nowUtc + moroccoOffset;
-        var todayLocalStart = nowLocal.Date;
-        // Convertir les bornes locales en UTC
-        var todayUtcStart = todayLocalStart - moroccoOffset;
+        // Bornes du jour local (Maroc, UTC+1) exprimées en UTC
+        var todayUtcStart = (DateTime.UtcNow + MoroccoOffset).Date - MoroccoOffset;
         var tomorrowUtcStart = todayUtcStart.AddDays(1);
 
-        var tickets = await _db.Tickets
-            .Where(t => t.HammamId == hammamId && 
-                        t.CreatedAt >= todayUtcStart && 
-                        t.CreatedAt < tomorrowUtcStart)
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var prices = await db.Tickets
+            .Where(t => t.HammamId == hammamId && t.CreatedAt >= todayUtcStart && t.CreatedAt < tomorrowUtcStart)
+            .Select(t => t.Prix)
             .ToListAsync();
 
-        // Si aucun ticket local trouvé, essayer de récupérer le compteur du serveur
-        if (tickets.Count == 0)
+        if (prices.Count == 0 && _connectivityService.IsOnline)
         {
-            try
+            var serverCount = await GetCountFromServerAsync($"api/tickets/count/today?hammamId={hammamId}");
+            if (serverCount > 0)
             {
-                var serverCount = await GetTodayCountFromServerAsync(hammamId);
-                if (serverCount > 0)
-                {
-                    Serilog.Log.Information(
-                        "Compteur local vide, utilisation du compteur serveur: {Count}", serverCount);
-                    return (serverCount, 0);
-                }
-            }
-            catch (Exception ex)
-            {
-                Serilog.Log.Debug(ex, "Impossible de récupérer le compteur serveur, utilisation du local");
+                Serilog.Log.Information("Compteur local vide, utilisation du compteur serveur: {Count}", serverCount);
+                return (serverCount, 0);
             }
         }
 
-        return (tickets.Count, tickets.Sum(t => t.Prix));
+        return (prices.Count, prices.Sum());
     }
 
-    public async Task<int> GetTotalTicketCountAsync()
-    {
-        var session = await _db.Sessions.FirstOrDefaultAsync();
-        if (session == null)
-        {
-            return await _db.Tickets.CountAsync();
-        }
-
-        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == session.HammamId);
-        var serverCount = await GetTotalCountFromServerAsync(session.HammamId);
-        return Math.Max(localCount, serverCount);
-    }
-
-    public async Task<int> GetTotalTicketCountAsync(Guid hammamId)
-    {
-        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == hammamId);
-        var serverCount = await GetTotalCountFromServerAsync(hammamId);
-        return Math.Max(localCount, serverCount);
-    }
-
-    public async Task<int> GetTodayCountFromServerAsync(Guid hammamId)
+    private async Task<int> GetCountFromServerAsync(string url)
     {
         try
         {
-            if (!await _connectivityService.CheckConnectivityAsync())
-            {
-                return 0;
-            }
+            var token = await _authService.EnsureValidTokenAsync();
+            if (token == null) return 0;
 
-            var session = await _db.Sessions.FirstOrDefaultAsync();
-            if (session == null) return 0;
-
-            var client = _httpClientFactory.CreateClient("HammamApi");
-            client.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
-
-            var response = await client.GetAsync($"api/tickets/count/today?hammamId={hammamId}");
+            var client = ApiClient.CreateAuthorized(_httpClientFactory, token);
+            var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                var count = await response.Content.ReadFromJsonAsync<int>();
-                return count;
+                return await response.Content.ReadFromJsonAsync<int>();
             }
         }
         catch (Exception ex)
         {
-            Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur serveur");
-        }
-        return 0;
-    }
-
-    private async Task<int> GetTotalCountFromServerAsync(Guid hammamId)
-    {
-        try
-        {
-            if (!await _connectivityService.CheckConnectivityAsync())
-            {
-                return 0;
-            }
-
-            var session = await _db.Sessions.FirstOrDefaultAsync();
-            if (session == null) return 0;
-
-            var client = _httpClientFactory.CreateClient("HammamApi");
-            client.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
-
-            var response = await client.GetAsync($"api/tickets/count/total?hammamId={hammamId}");
-            if (response.IsSuccessStatusCode)
-            {
-                var count = await response.Content.ReadFromJsonAsync<int>();
-                return count;
-            }
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Debug(ex, "Erreur lors de la récupération du compteur total serveur");
+            Serilog.Log.Debug(ex, "Erreur lors de la récupération d'un compteur serveur ({Url})", url);
         }
 
         return 0;
     }
 
-    private async Task<int> GetLastTicketNumberSnapshotAsync(Guid hammamId, int hammamPrefixeTicket)
+    private async Task<int> GetLastTicketNumberSnapshotAsync(LocalDbContext db, Guid hammamId, int hammamPrefixeTicket)
     {
         var configKey = $"{LastTicketConfigPrefix}{hammamId}";
-        var config = await _db.Configs.FirstOrDefaultAsync(c => c.Key == configKey);
+        var config = await db.Configs.AsNoTracking().FirstOrDefaultAsync(c => c.Key == configKey);
 
         var lastTicketFromConfig = 0;
         if (config != null)
@@ -730,35 +914,35 @@ public class TicketService : ITicketService
             _ = int.TryParse(config.Value, out lastTicketFromConfig);
         }
 
-        var localCount = await _db.Tickets.CountAsync(t => t.HammamId == hammamId);
+        var localCount = await db.Tickets.CountAsync(t => t.HammamId == hammamId);
         var baseTicketNumber = hammamPrefixeTicket + localCount;
 
-        if (config == null && await _connectivityService.CheckConnectivityAsync())
+        // Premier ticket sur ce poste : se caler sur le compteur serveur si disponible.
+        // IsOnline (dernier état connu) → aucun appel réseau bloquant quand on est hors ligne.
+        if (config == null && _connectivityService.IsOnline)
         {
-            var serverCount = await GetTotalCountFromServerAsync(hammamId);
+            var serverCount = await GetCountFromServerAsync($"api/tickets/count/total?hammamId={hammamId}");
             baseTicketNumber = hammamPrefixeTicket + Math.Max(localCount, serverCount);
         }
 
         return Math.Max(lastTicketFromConfig, baseTicketNumber);
     }
 
-    private async Task<string> ReserveNextTicketNumberInternalAsync(Guid hammamId, int hammamPrefixeTicket)
+    private async Task<string> ReserveNextTicketNumberAsync(LocalDbContext db, Guid hammamId, int hammamPrefixeTicket)
     {
         var configKey = $"{LastTicketConfigPrefix}{hammamId}";
-        var currentLastTicketNumber = await GetLastTicketNumberSnapshotAsync(hammamId, hammamPrefixeTicket);
-        var nextTicketNumber = currentLastTicketNumber + 1;
-        var deviceSuffix = await GetOrCreateDeviceSuffixAsync();
+        var nextTicketNumber = await GetLastTicketNumberSnapshotAsync(db, hammamId, hammamPrefixeTicket) + 1;
+        var deviceSuffix = await GetOrCreateDeviceSuffixAsync(db);
 
-        var config = await _db.Configs.FirstOrDefaultAsync(c => c.Key == configKey);
+        var config = await db.Configs.FirstOrDefaultAsync(c => c.Key == configKey);
         if (config == null)
         {
-            config = new LocalConfig
+            db.Configs.Add(new LocalConfig
             {
                 Key = configKey,
                 Value = nextTicketNumber.ToString(),
                 UpdatedAt = DateTime.UtcNow
-            };
-            _db.Configs.Add(config);
+            });
         }
         else
         {
@@ -766,13 +950,13 @@ public class TicketService : ITicketService
             config.UpdatedAt = DateTime.UtcNow;
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         return $"{nextTicketNumber}-{deviceSuffix}";
     }
 
-    private async Task<string> GetOrCreateDeviceSuffixAsync()
+    private static async Task<string> GetOrCreateDeviceSuffixAsync(LocalDbContext db)
     {
-        var existing = await _db.Configs.FirstOrDefaultAsync(c => c.Key == DeviceSuffixConfigKey);
+        var existing = await db.Configs.FirstOrDefaultAsync(c => c.Key == DeviceSuffixConfigKey);
         if (existing != null && IsValidDeviceSuffix(existing.Value))
         {
             return existing.Value;
@@ -782,12 +966,7 @@ public class TicketService : ITicketService
 
         if (existing == null)
         {
-            _db.Configs.Add(new LocalConfig
-            {
-                Key = DeviceSuffixConfigKey,
-                Value = suffix,
-                UpdatedAt = DateTime.UtcNow
-            });
+            db.Configs.Add(new LocalConfig { Key = DeviceSuffixConfigKey, Value = suffix, UpdatedAt = DateTime.UtcNow });
         }
         else
         {
@@ -795,7 +974,7 @@ public class TicketService : ITicketService
             existing.UpdatedAt = DateTime.UtcNow;
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         return suffix;
     }
 
@@ -803,16 +982,11 @@ public class TicketService : ITicketService
     {
         var message = ex.InnerException?.Message ?? ex.Message;
         return message.Contains("IX_tickets_hammam_ticket_number", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("UNIQUE constraint failed: tickets.HammamId, tickets.TicketNumber", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("duplicate key value violates unique constraint", StringComparison.OrdinalIgnoreCase);
+            || message.Contains("UNIQUE constraint failed: tickets.HammamId, tickets.TicketNumber", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsValidDeviceSuffix(string? value)
-    {
-        return !string.IsNullOrWhiteSpace(value)
-            && value.Length >= 4
-            && value.All(char.IsLetterOrDigit);
-    }
+    private static bool IsValidDeviceSuffix(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length >= 4 && value.All(char.IsLetterOrDigit);
 
     private static string CreateRandomDeviceSuffix()
     {
@@ -821,31 +995,49 @@ public class TicketService : ITicketService
         return Convert.ToHexString(bytes);
     }
 
-    public async Task<IEnumerable<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100)
+    /// <summary>
+    /// Tickets en attente. Les tickets déjà refusés passent APRÈS les nouveaux
+    /// (tri par nombre de tentatives) : un ticket bloqué ne bloque plus la file.
+    /// </summary>
+    public async Task<List<LocalTicket>> GetUnsyncedTicketsAsync(int limit = 100)
     {
-        return await _db.Tickets
-            .Where(t => t.SyncStatus == "Pending")
-            .OrderBy(t => t.CreatedAt)
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.Tickets
+            .AsNoTracking()
+            .Where(t => t.SyncStatus == StatusPending)
+            .OrderBy(t => t.SyncAttempts)
+            .ThenBy(t => t.CreatedAt)
             .Take(limit)
             .ToListAsync();
     }
 
-    public async Task MarkAsSyncedAsync(IEnumerable<Guid> ticketIds)
+    public async Task MarkAsSyncedAsync(IReadOnlyCollection<Guid> ticketIds)
     {
-        var tickets = await _db.Tickets
+        if (ticketIds.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        await db.Tickets
             .Where(t => ticketIds.Contains(t.Id))
-            .ToListAsync();
-
-        foreach (var ticket in tickets)
-        {
-            ticket.SyncStatus = "Synced";
-            ticket.SyncedAt = DateTime.UtcNow;
-        }
-
-        await _db.SaveChangesAsync();
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.SyncStatus, StatusSynced)
+                .SetProperty(t => t.SyncedAt, now)
+                .SetProperty(t => t.LastSyncError, (string?)null));
     }
 
-    // DTO pour recevoir les types de l'API
+    public async Task MarkSyncFailedAsync(IReadOnlyCollection<Guid> ticketIds, string reason)
+    {
+        if (ticketIds.Count == 0) return;
+
+        var error = reason.Length > 500 ? reason[..500] : reason;
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        await db.Tickets
+            .Where(t => ticketIds.Contains(t.Id))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.SyncAttempts, t => t.SyncAttempts + 1)
+                .SetProperty(t => t.LastSyncError, error));
+    }
+
     private record ApiTypeTicket(
         Guid Id,
         string Nom,
@@ -860,15 +1052,22 @@ public class TicketService : ITicketService
 }
 
 /// <summary>
-/// Service de synchronisation avec le serveur
+/// Synchronisation automatique avec le serveur :
+/// - au retour de la connexion, après chaque vente et toutes les N minutes ;
+/// - envoie TOUS les tickets en attente par lots successifs (plus besoin de cliquer en boucle) ;
+/// - un ticket refusé est reporté en fin de file au lieu de bloquer les autres.
 /// </summary>
-public class SyncService : ISyncService
+public class SyncService : ISyncService, IDisposable
 {
+    private const int MaxBatchesPerRun = 200;
+
     private readonly ITicketService _ticketService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConnectivityService _connectivityService;
-    private readonly LocalDbContext _db;
+    private readonly IAuthService _authService;
+    private readonly IDbContextFactory<LocalDbContext> _dbFactory;
     private readonly SyncSettings _settings;
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
     private Timer? _syncTimer;
 
     public event EventHandler<SyncEventArgs>? SyncCompleted;
@@ -877,23 +1076,48 @@ public class SyncService : ISyncService
         ITicketService ticketService,
         IHttpClientFactory httpClientFactory,
         IConnectivityService connectivityService,
-        LocalDbContext db,
+        IAuthService authService,
+        IDbContextFactory<LocalDbContext> dbFactory,
         IOptions<SyncSettings> settings)
     {
         _ticketService = ticketService;
         _httpClientFactory = httpClientFactory;
         _connectivityService = connectivityService;
-        _db = db;
+        _authService = authService;
+        _dbFactory = dbFactory;
         _settings = settings.Value;
     }
 
+    private int BatchSize => Math.Clamp(_settings.BatchSize, 1, 200);
+
     public void StartBackgroundSync()
     {
-        var interval = TimeSpan.FromMinutes(_settings.IntervalMinutes);
-        _syncTimer = new Timer(async _ => await TrySyncAsync(), null, interval, interval);
-        
-        Serilog.Log.Information("Synchronisation automatique démarrée (toutes les {Minutes} minutes)", 
-            _settings.IntervalMinutes);
+        if (_syncTimer != null) return;
+
+        _connectivityService.ConnectivityChanged += OnConnectivityChanged;
+
+        var interval = TimeSpan.FromMinutes(Math.Max(1, _settings.IntervalMinutes));
+        _syncTimer = new Timer(_ => _ = TrySyncAsync(), null, TimeSpan.FromSeconds(5), interval);
+
+        Serilog.Log.Information(
+            "Synchronisation automatique démarrée (toutes les {Minutes} minutes + au retour de connexion)",
+            interval.TotalMinutes);
+    }
+
+    private void OnConnectivityChanged(object? sender, bool isOnline)
+    {
+        if (!isOnline) return;
+
+        Serilog.Log.Information("Connexion détectée — synchronisation automatique des tickets en attente");
+        _ = TrySyncAsync();
+    }
+
+    public void RequestSync()
+    {
+        if (_connectivityService.IsOnline)
+        {
+            _ = TrySyncAsync();
+        }
     }
 
     private async Task TrySyncAsync()
@@ -916,99 +1140,184 @@ public class SyncService : ISyncService
 
     public async Task SyncNowAsync()
     {
-        var session = await _db.Sessions.FirstOrDefaultAsync();
-        if (session == null) return;
-
-        var unsyncedTickets = await _ticketService.GetUnsyncedTicketsAsync(_settings.BatchSize);
-        var ticketList = unsyncedTickets.ToList();
-
-        if (!ticketList.Any())
+        if (!await _syncLock.WaitAsync(0))
         {
-            Serilog.Log.Debug("Aucun ticket à synchroniser");
+            Serilog.Log.Debug("Synchronisation déjà en cours, ignorée");
             return;
         }
 
-        Serilog.Log.Information("Synchronisation de {Count} tickets...", ticketList.Count);
+        var totalSynced = 0;
+        var totalErrors = 0;
+        var attempted = false;
+        var completedNormally = true;
+        var sentThisRun = new HashSet<Guid>();
 
         try
         {
-            var client = _httpClientFactory.CreateClient("HammamApi");
-            client.DefaultRequestHeaders.Authorization = 
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.Token);
-
-            var response = await client.PostAsJsonAsync("api/tickets/sync", new
+            for (var batch = 0; batch < MaxBatchesPerRun; batch++)
             {
-                Tickets = ticketList.Select(t => new
-                {
-                    t.Id,
-                    TicketNumber = string.IsNullOrWhiteSpace(t.TicketNumber)
-                        ? $"LEGACY-{t.Id.ToString("N")[..8]}"
-                        : t.TicketNumber,
-                    t.TypeTicketId,
-                    t.EmployeId,
-                    t.HammamId,
-                    t.Prix,
-                    t.CreatedAt,
-                    t.DeviceId
-                })
-            });
-
-            if (response.IsSuccessStatusCode)
-            {
-                // Lire la réponse du serveur pour savoir quels tickets ont échoué
-                var syncResult = await response.Content.ReadFromJsonAsync<SyncResponse>();
-                
-                var failedIds = syncResult?.FailedTicketIds?.ToHashSet() ?? new HashSet<Guid>();
-                var successIds = ticketList
-                    .Where(t => !failedIds.Contains(t.Id))
-                    .Select(t => t.Id)
+                var tickets = (await _ticketService.GetUnsyncedTicketsAsync(BatchSize))
+                    .Where(t => !sentThisRun.Contains(t.Id))
                     .ToList();
 
-                if (successIds.Any())
+                // Vide, ou il ne reste que des tickets déjà refusés pendant ce passage
+                if (tickets.Count == 0)
                 {
-                    await _ticketService.MarkAsSyncedAsync(successIds);
+                    if (batch == 0) Serilog.Log.Debug("Aucun ticket à synchroniser");
+                    break;
                 }
-                
-                var syncedCount = successIds.Count;
-                var errorCount = failedIds.Count;
+
+                var token = await _authService.GetSyncTokenAsync();
+                if (token == null)
+                {
+                    Serilog.Log.Warning("Pas de token valide pour la synchronisation, report (tickets conservés en local)");
+                    completedNormally = false;
+                    break;
+                }
+
+                attempted = true;
+                Serilog.Log.Information("Synchronisation de {Count} tickets...", tickets.Count);
+
+                var outcome = await SendBatchAsync(token, tickets);
+                if (outcome == null)
+                {
+                    // Erreur serveur/réseau : on ne pénalise pas les tickets, on réessaiera plus tard
+                    completedNormally = false;
+                    break;
+                }
+
+                var (successIds, failedIds) = outcome.Value;
+                sentThisRun.UnionWith(failedIds);
+                await _ticketService.MarkAsSyncedAsync(successIds);
+                await _ticketService.MarkSyncFailedAsync(failedIds, "Refusé par le serveur");
+
+                totalSynced += successIds.Count;
+                totalErrors += failedIds.Count;
 
                 Serilog.Log.Information(
                     "Synchronisation terminée: {Synced} réussis, {Errors} échoués sur {Total} total",
-                    syncedCount, errorCount, ticketList.Count);
-                
-                SyncCompleted?.Invoke(this, new SyncEventArgs
-                {
-                    SyncedCount = syncedCount,
-                    ErrorCount = errorCount,
-                    Success = errorCount == 0
-                });
+                    successIds.Count, failedIds.Count, tickets.Count);
+
             }
-            else
-            {
-                Serilog.Log.Warning("Échec de la synchronisation: {StatusCode}", response.StatusCode);
-                
-                SyncCompleted?.Invoke(this, new SyncEventArgs
-                {
-                    SyncedCount = 0,
-                    ErrorCount = ticketList.Count,
-                    Success = false
-                });
-            }
+
+            // Garder les accès hors ligne à jour (limité à une fois toutes les 30 min)
+            await _authService.RefreshOfflineCredentialsAsync();
         }
         catch (Exception ex)
         {
+            completedNormally = false;
             Serilog.Log.Error(ex, "Erreur lors de la synchronisation");
-            
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
+
+        if (attempted)
+        {
             SyncCompleted?.Invoke(this, new SyncEventArgs
             {
-                SyncedCount = 0,
-                ErrorCount = ticketList.Count,
-                Success = false
+                SyncedCount = totalSynced,
+                ErrorCount = totalErrors,
+                PendingCount = await GetPendingCountSafeAsync(),
+                Success = completedNormally && totalErrors == 0
             });
         }
     }
 
-    // DTO pour lire la réponse du serveur
+    /// <summary>
+    /// Envoie un lot. Renvoie null si le lot n'a pas pu être traité (serveur/réseau),
+    /// sinon les tickets acceptés et refusés.
+    /// </summary>
+    private async Task<(List<Guid> Success, List<Guid> Failed)?> SendBatchAsync(string token, List<LocalTicket> tickets)
+    {
+        try
+        {
+            var response = await PostAsync(token, tickets);
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                var refreshed = await _authService.GetSyncTokenAsync(forceRefresh: true);
+                if (refreshed == null)
+                {
+                    Serilog.Log.Warning("Token refusé (401) et ré-authentification impossible");
+                    return null;
+                }
+
+                response = await PostAsync(refreshed, tickets);
+            }
+
+            // Un ticket malformé fait rejeter tout le lot (400) : on isole le coupable ticket par ticket
+            if (response.StatusCode == HttpStatusCode.BadRequest && tickets.Count > 1)
+            {
+                Serilog.Log.Warning("Lot refusé (400), envoi ticket par ticket pour isoler le ticket invalide");
+                return await SendOneByOneAsync(token, tickets);
+            }
+
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                return (new List<Guid>(), tickets.Select(t => t.Id).ToList());
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Serilog.Log.Warning("Échec de la synchronisation: {StatusCode}", response.StatusCode);
+                return null;
+            }
+
+            var syncResult = await response.Content.ReadFromJsonAsync<SyncResponse>();
+            var failed = syncResult?.FailedTicketIds?.ToHashSet() ?? new HashSet<Guid>();
+
+            return (
+                tickets.Where(t => !failed.Contains(t.Id)).Select(t => t.Id).ToList(),
+                tickets.Where(t => failed.Contains(t.Id)).Select(t => t.Id).ToList());
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            Serilog.Log.Warning(ex, "Serveur injoignable pendant la synchronisation, report");
+            return null;
+        }
+    }
+
+    private async Task<(List<Guid> Success, List<Guid> Failed)?> SendOneByOneAsync(string token, List<LocalTicket> tickets)
+    {
+        var success = new List<Guid>();
+        var failed = new List<Guid>();
+
+        foreach (var ticket in tickets)
+        {
+            var result = await SendBatchAsync(token, new List<LocalTicket> { ticket });
+            if (result == null)
+                return success.Count + failed.Count > 0 ? (success, failed) : null;
+
+            success.AddRange(result.Value.Success);
+            failed.AddRange(result.Value.Failed);
+        }
+
+        return (success, failed);
+    }
+
+    private Task<HttpResponseMessage> PostAsync(string token, List<LocalTicket> tickets)
+    {
+        var client = ApiClient.CreateAuthorized(_httpClientFactory, token);
+        return client.PostAsJsonAsync("api/tickets/sync", new
+        {
+            Tickets = tickets.Select(t => new
+            {
+                t.Id,
+                TicketNumber = string.IsNullOrWhiteSpace(t.TicketNumber)
+                    ? $"LEGACY-{t.Id.ToString("N")[..8]}"
+                    : t.TicketNumber,
+                t.TypeTicketId,
+                t.EmployeId,
+                t.HammamId,
+                t.Prix,
+                t.CreatedAt,
+                t.DeviceId
+            })
+        });
+    }
+
     private record SyncResponse(
         int TotalReceived,
         int Inserted,
@@ -1019,7 +1328,26 @@ public class SyncService : ISyncService
 
     public async Task<int> GetPendingCountAsync()
     {
-        return await _db.Tickets.CountAsync(t => t.SyncStatus == "Pending");
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.Tickets.CountAsync(t => t.SyncStatus == "Pending");
+    }
+
+    private async Task<int> GetPendingCountSafeAsync()
+    {
+        try
+        {
+            return await GetPendingCountAsync();
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        _connectivityService.ConnectivityChanged -= OnConnectivityChanged;
+        _syncTimer?.Dispose();
     }
 }
 
@@ -1034,7 +1362,6 @@ public class AudioService : IAudioService
         {
             try
             {
-                // Son système simple
                 System.Media.SystemSounds.Asterisk.Play();
             }
             catch (Exception ex)
@@ -1046,52 +1373,85 @@ public class AudioService : IAudioService
 }
 
 /// <summary>
-/// Service de vérification de la connectivité
+/// Détection de connectivité : vérification périodique (toutes les 15 s) et exposition du dernier
+/// état connu (<see cref="IsOnline"/>) sans appel réseau bloquant.
 /// </summary>
-public class ConnectivityService : IConnectivityService
+public class ConnectivityService : IConnectivityService, IDisposable
 {
-    private bool _lastState = true;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly Timer _timer; // gardé en champ : sinon ramassé par le GC et la détection s'arrête
+    private readonly object _stateLock = new();
+    private bool _lastState;
+    private int _periodicCheckRunning;
 
     public event EventHandler<bool>? ConnectivityChanged;
+
+    public bool IsOnline
+    {
+        get { lock (_stateLock) return _lastState; }
+    }
 
     public ConnectivityService(IHttpClientFactory httpClientFactory)
     {
         _httpClientFactory = httpClientFactory;
-        
-        // Vérifier périodiquement
-        var timer = new Timer(async _ => await CheckAndNotifyAsync(), null,
-            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        _timer = new Timer(_ => _ = PeriodicCheckAsync(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(15));
     }
 
     public async Task<bool> CheckConnectivityAsync()
     {
+        bool isOnline;
         try
         {
-                var client = _httpClientFactory.CreateClient("HammamApiFast");
-            
-            var response = await client.GetAsync("health");
-            return response.IsSuccessStatusCode;
+            var client = _httpClientFactory.CreateClient("HammamApiFast");
+            using var response = await client.GetAsync("health");
+            isOnline = response.IsSuccessStatusCode;
         }
         catch
         {
-            return false;
+            isOnline = false;
+        }
+
+        UpdateState(isOnline);
+        return isOnline;
+    }
+
+    private async Task PeriodicCheckAsync()
+    {
+        if (Interlocked.Exchange(ref _periodicCheckRunning, 1) == 1)
+            return;
+
+        try
+        {
+            await CheckConnectivityAsync();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _periodicCheckRunning, 0);
         }
     }
 
-    private async Task CheckAndNotifyAsync()
+    private void UpdateState(bool isOnline)
     {
-        var currentState = await CheckConnectivityAsync();
-        
-        if (currentState != _lastState)
+        lock (_stateLock)
         {
-            _lastState = currentState;
-            ConnectivityChanged?.Invoke(this, currentState);
-            
-            Serilog.Log.Information("Changement de connectivité: {State}", 
-                currentState ? "En ligne" : "Hors ligne");
+            if (_lastState == isOnline)
+                return;
+            _lastState = isOnline;
+        }
+
+        Serilog.Log.Information("Changement de connectivité: {State}", isOnline ? "En ligne" : "Hors ligne");
+
+        try
+        {
+            ConnectivityChanged?.Invoke(this, isOnline);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Erreur dans un abonné ConnectivityChanged");
         }
     }
+
+    public void Dispose() => _timer.Dispose();
 }
 
 #endregion

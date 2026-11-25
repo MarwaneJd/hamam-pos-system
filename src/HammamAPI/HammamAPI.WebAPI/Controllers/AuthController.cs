@@ -144,6 +144,42 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Accès hors ligne pour les postes de caisse : tous les employés actifs (hors admins)
+    /// du hammam de l'appelant, avec leur hash BCrypt. Permet à chaque employé de se connecter
+    /// hors ligne sur n'importe quel poste du hammam, même s'il ne s'y est jamais connecté en ligne.
+    /// </summary>
+    [HttpGet("offline-credentials")]
+    [Authorize]
+    public async Task<ActionResult<IEnumerable<OfflineCredentialDto>>> GetOfflineCredentials()
+    {
+        var hammamIdClaim = User.FindFirst("HammamId")?.Value;
+        if (!Guid.TryParse(hammamIdClaim, out var hammamId))
+        {
+            return Forbid();
+        }
+
+        var credentials = await _context.Employes
+            .AsNoTracking()
+            .Include(e => e.Hammam)
+            .Where(e => e.HammamId == hammamId && e.Actif && e.Role != Domain.Entities.EmployeRole.Admin)
+            .Select(e => new OfflineCredentialDto(
+                e.Id,
+                e.Username,
+                e.Prenom,
+                e.Nom,
+                e.Icone,
+                e.HammamId,
+                e.Hammam != null ? e.Hammam.Nom : "",
+                e.Hammam != null ? e.Hammam.NomArabe : "",
+                e.Hammam != null ? e.Hammam.PrefixeTicket : 100000,
+                e.PasswordHash))
+            .ToListAsync();
+
+        _logger.LogInformation("Accès hors ligne envoyés pour le hammam {HammamId}: {Count} employés", hammamId, credentials.Count);
+        return Ok(credentials);
+    }
+
+    /// <summary>
     /// Validation du token actuel
     /// </summary>
     [HttpGet("validate")]

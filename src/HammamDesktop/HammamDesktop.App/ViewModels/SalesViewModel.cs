@@ -29,7 +29,7 @@ public partial class SalesViewModel : ObservableObject
     private decimal _todayRevenue;
 
     [ObservableProperty]
-    private int _nextTicketNumber;
+    private string _nextTicketNumber = string.Empty;
 
     [ObservableProperty]
     private string _todayDate = string.Empty;
@@ -50,7 +50,7 @@ public partial class SalesViewModel : ObservableObject
     private string _hammamNomArabe = string.Empty;
 
     private int _hammamPrefixeTicket = 100000;
-    private int _totalTicketCount = 0; // Compteur total permanent (ne se réinitialise jamais)
+    private readonly SemaphoreSlim _sellLock = new(1, 1);
 
     [ObservableProperty]
     private string _lastSaleMessage = string.Empty;
@@ -73,8 +73,19 @@ public partial class SalesViewModel : ObservableObject
         _authService = authService;
         _printService = printService;
 
-        // S'abonner aux changements de connectivité
+        // S'abonner aux changements de connectivité et aux fins de synchro
         _connectivityService.ConnectivityChanged += OnConnectivityChanged;
+        _syncService.SyncCompleted += OnSyncCompleted;
+    }
+
+    /// <summary>
+    /// Se désabonner des services singletons (appelé à la fermeture de la fenêtre),
+    /// sinon chaque session laisse un ViewModel fantôme abonné.
+    /// </summary>
+    public void Detach()
+    {
+        _connectivityService.ConnectivityChanged -= OnConnectivityChanged;
+        _syncService.SyncCompleted -= OnSyncCompleted;
     }
 
     /// <summary>
@@ -114,17 +125,22 @@ public partial class SalesViewModel : ObservableObject
         // Date d'aujourd'hui
         TodayDate = DateTime.Now.ToString("dd/MM/yyyy");
 
-        // État de la connexion
-        IsOnline = await _connectivityService.CheckConnectivityAsync();
+        // État de la connexion (dernier état connu : pas d'attente réseau au chargement)
+        IsOnline = _connectivityService.IsOnline;
         PendingSyncCount = await _syncService.GetPendingCountAsync();
+
+        // Envoyer tout de suite les tickets en attente s'il y a du réseau
+        _syncService.RequestSync();
     }
 
     /// <summary>
     /// Vendre un ticket
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task SellTicketAsync(TicketTypeViewModel ticketType)
     {
+        await _sellLock.WaitAsync();
+
         try
         {
             var session = await _authService.GetCurrentSessionAsync();
@@ -149,18 +165,18 @@ public partial class SalesViewModel : ObservableObject
                 DeviceId = Environment.MachineName
             };
 
-            await _ticketService.CreateTicketAsync(ticket);
+            var ticketNumber = await _ticketService.CreateTicketWithNextNumberAsync(ticket, _hammamPrefixeTicket);
+            var displayTicketNumber = ToDisplayTicketNumber(ticketNumber);
 
             // Jouer le son de confirmation
             await _audioService.PlayBeepAsync();
 
             // 🖨️ IMPRESSION AUTOMATIQUE DU TICKET
-            var ticketNumber = _hammamPrefixeTicket + _totalTicketCount + 1; // Préfixe + compteur permanent
             await _printService.PrintTicketAsync(new TicketPrintData
             {
                 HammamNom = HammamNom,
                 HammamNomArabe = HammamNomArabe,
-                TicketNumber = ticketNumber,
+                TicketNumber = displayTicketNumber,
                 TypeTicket = ticketType.Nom,
                 Prix = ticketType.Prix,
                 DateHeure = DateTime.Now,
@@ -182,6 +198,9 @@ public partial class SalesViewModel : ObservableObject
             // Mettre à jour les compteurs
             await RefreshCountersAsync();
 
+            // Envoyer le ticket au serveur en arrière-plan (sans bloquer la caisse)
+            _syncService.RequestSync();
+
             Serilog.Log.Information(
                 "Ticket vendu et imprimé: #{TicketNumber} {TicketType} - {Prix} DH par {Employe}",
                 ticketNumber, ticketType.Nom, ticketType.Prix, session.Username);
@@ -189,6 +208,10 @@ public partial class SalesViewModel : ObservableObject
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "Erreur lors de la vente du ticket");
+        }
+        finally
+        {
+            _sellLock.Release();
         }
     }
 
@@ -198,8 +221,8 @@ public partial class SalesViewModel : ObservableObject
     [RelayCommand]
     private async Task ForceSyncAsync()
     {
-        if (!IsOnline) return;
-
+        // Pas de garde sur IsOnline : SyncNowAsync vérifie lui-même la connexion,
+        // et IsOnline peut être en retard de quelques secondes.
         try
         {
             await _syncService.SyncNowAsync();
@@ -266,9 +289,8 @@ public partial class SalesViewModel : ObservableObject
         TodayTicketsCount = stats.Count;
         TodayRevenue = stats.Revenue;
 
-        // Compteur permanent : total de TOUS les tickets du hammam (jamais remis à zéro)
-        _totalTicketCount = await _ticketService.GetTotalTicketCountAsync(session.HammamId);
-        NextTicketNumber = _hammamPrefixeTicket + _totalTicketCount + 1;
+        var nextFullTicketNumber = await _ticketService.GetNextTicketNumberAsync(session.HammamId, _hammamPrefixeTicket);
+        NextTicketNumber = ToDisplayTicketNumber(nextFullTicketNumber);
 
         PendingSyncCount = await _syncService.GetPendingCountAsync();
     }
@@ -279,6 +301,26 @@ public partial class SalesViewModel : ObservableObject
     private void OnConnectivityChanged(object? sender, bool isOnline)
     {
         IsOnline = isOnline;
+    }
+
+    /// <summary>
+    /// Callback fin de synchronisation : met à jour le badge "en attente"
+    /// </summary>
+    private void OnSyncCompleted(object? sender, SyncEventArgs e)
+    {
+        PendingSyncCount = e.PendingCount;
+    }
+
+    private static string ToDisplayTicketNumber(string? fullTicketNumber)
+    {
+        if (string.IsNullOrWhiteSpace(fullTicketNumber))
+            return string.Empty;
+
+        var separatorIndex = fullTicketNumber.IndexOf('-');
+        if (separatorIndex <= 0)
+            return fullTicketNumber;
+
+        return fullTicketNumber[..separatorIndex];
     }
 }
 

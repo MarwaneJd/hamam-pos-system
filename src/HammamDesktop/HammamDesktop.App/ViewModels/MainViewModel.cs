@@ -80,7 +80,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (_currentSession == null) return;
         
-        var stats = await _ticketService.GetTodayStatsAsync(_currentSession.EmployeId);
+        var stats = await _ticketService.GetTodayStatsAsync(_currentSession.HammamId);
         TicketsToday = stats.Count;
         RevenueToday = stats.Revenue;
         PendingSync = await _syncService.GetPendingCountAsync();

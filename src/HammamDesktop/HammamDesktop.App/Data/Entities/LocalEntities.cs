@@ -27,6 +27,9 @@ public class LocalTicket
     [Required]
     public DateTime CreatedAt { get; set; }
 
+    [MaxLength(50)]
+    public string? TicketNumber { get; set; }
+
     public DateTime? SyncedAt { get; set; }
 
     [Required]
@@ -35,6 +38,15 @@ public class LocalTicket
 
     [MaxLength(100)]
     public string? DeviceId { get; set; }
+
+    /// <summary>
+    /// Nombre de refus du serveur. Les tickets refusés passent en fin de file
+    /// pour ne jamais bloquer la synchronisation des autres.
+    /// </summary>
+    public int SyncAttempts { get; set; }
+
+    [MaxLength(500)]
+    public string? LastSyncError { get; set; }
 
     // Informations de type (pour affichage offline)
     [MaxLength(50)]
@@ -148,6 +160,18 @@ public class LocalEmployeProfile
 
     [MaxLength(128)]
     public string PasswordHash { get; set; } = "";
+
+    /// <summary>
+    /// Mot de passe chiffré localement (DPAPI) pour ré-authentification silencieuse
+    /// au retour de la connexion. Jamais stocké en clair.
+    /// </summary>
+    public string? EncryptedPassword { get; set; }
+
+    /// <summary>
+    /// Hash BCrypt fourni par le serveur (api/auth/offline-credentials) : permet à l'employé
+    /// de se connecter hors ligne sur ce poste même s'il ne s'y est jamais connecté en ligne.
+    /// </summary>
+    public string? ServerPasswordHash { get; set; }
 
     public DateTime CachedAt { get; set; } = DateTime.UtcNow;
 }

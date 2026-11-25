@@ -47,10 +47,13 @@ public partial class MainWindow : Window
         // Déconnexion automatique à la fermeture (supprimer la session)
         try
         {
-            var authService = (Services.AuthService)App.GetService<Services.IAuthService>();
-            await authService.ClearSessionAsync();
+            _viewModel.Detach();
+            await App.GetService<Services.IAuthService>().ClearSessionAsync();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Impossible de supprimer la session à la fermeture");
+        }
         
         base.OnClosed(e);
     }

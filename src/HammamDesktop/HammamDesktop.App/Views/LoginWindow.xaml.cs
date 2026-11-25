@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using HammamDesktop.Data;
 using HammamDesktop.Data.Entities;
+using HammamDesktop.Services;
 using HammamDesktop.ViewModels;
 
 namespace HammamDesktop.Views;
@@ -20,21 +21,27 @@ public partial class LoginWindow : Window
 {
     private readonly LoginViewModel _viewModel;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly LocalDbContext _db;
+    private readonly IConnectivityService _connectivityService;
+    private readonly IDbContextFactory<LocalDbContext> _dbFactory;
     private List<EmployeProfile> _profiles = new();
     private EmployeProfile? _selectedProfile;
     private DispatcherTimer? _autoLoginTimer;
     private bool _isAutoLogging;
     private bool _isOfflineMode;
 
-    public LoginWindow(LoginViewModel viewModel, IHttpClientFactory httpClientFactory, LocalDbContext db)
+    public LoginWindow(
+        LoginViewModel viewModel,
+        IHttpClientFactory httpClientFactory,
+        IConnectivityService connectivityService,
+        IDbContextFactory<LocalDbContext> dbFactory)
     {
         try
         {
             InitializeComponent();
             _viewModel = viewModel;
             _httpClientFactory = httpClientFactory;
-            _db = db;
+            _connectivityService = connectivityService;
+            _dbFactory = dbFactory;
             DataContext = _viewModel;
 
             Loaded += LoginWindow_Loaded;
@@ -76,12 +83,20 @@ public partial class LoginWindow : Window
             LoadingProfilesText.Visibility = Visibility.Visible;
             ProfilesGrid.Children.Clear();
 
-            var client = _httpClientFactory.CreateClient("HammamApi");
+            if (!await _connectivityService.CheckConnectivityAsync())
+            {
+                Serilog.Log.Information("Mode hors ligne détecté immédiatement - chargement profils cache");
+                await LoadCachedProfilesAsync();
+                return;
+            }
+
+            var client = _httpClientFactory.CreateClient("HammamApiFast");
+            client.Timeout = TimeSpan.FromSeconds(5);
             var profiles = await client.GetFromJsonAsync<List<EmployeProfile>>("api/auth/profiles");
 
             if (profiles == null || !profiles.Any())
             {
-                LoadingProfilesText.Text = "Aucun profil trouvé";
+                await LoadCachedProfilesAsync();
                 return;
             }
 
@@ -92,81 +107,24 @@ public partial class LoginWindow : Window
             // Ne pas afficher le nom du hammam - la connexion est ouverte pour tous
             HammamNameText.Text = "";
 
-            // Créer les cartes de profil
             foreach (var profile in profiles)
             {
-                var card = CreateProfileCard(profile);
-                ProfilesGrid.Children.Add(card);
+                ProfilesGrid.Children.Add(CreateProfileCard(profile));
             }
 
-            // Mettre en cache les profils pour utilisation hors ligne
-            await CacheProfilesAsync(profiles);
+            // Remarque : ces profils (anonymes, sans ID) ne sont PAS mis en cache.
+            // Les accès hors ligne viennent de la connexion en ligne et de
+            // api/auth/offline-credentials (voir AuthService.RefreshOfflineCredentialsAsync).
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Serilog.Log.Warning("Serveur inaccessible - tentative de chargement des profils en cache");
-            await LoadCachedProfilesAsync();
-        }
-        catch (TaskCanceledException)
-        {
-            Serilog.Log.Warning("Timeout serveur - tentative de chargement des profils en cache");
+            Serilog.Log.Warning("Serveur inaccessible - chargement des profils en cache");
             await LoadCachedProfilesAsync();
         }
         catch (Exception ex)
         {
-            LoadingProfilesText.Text = "Erreur de chargement";
             Serilog.Log.Error(ex, "Erreur lors du chargement des profils");
-        }
-    }
-
-    private async Task CacheProfilesAsync(List<EmployeProfile> profiles)
-    {
-        try
-        {
-            var existingProfiles = await _db.EmployeProfiles.ToListAsync();
-            var serverIds = profiles.Select(p => p.Id).ToHashSet();
-
-            // Supprimer les profils qui n'existent plus sur le serveur
-            var toRemove = existingProfiles.Where(p => !serverIds.Contains(p.Id)).ToList();
-            if (toRemove.Any())
-                _db.EmployeProfiles.RemoveRange(toRemove);
-
-            // Ajouter ou mettre à jour les profils
-            foreach (var profile in profiles)
-            {
-                var existing = existingProfiles.FirstOrDefault(p => p.Id == profile.Id);
-                if (existing != null)
-                {
-                    existing.Username = profile.Username;
-                    existing.Prenom = profile.Prenom;
-                    existing.Nom = profile.Nom;
-                    existing.Icone = profile.Icone;
-                    existing.HammamId = profile.HammamId;
-                    existing.HammamNom = profile.HammamNom;
-                    existing.CachedAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    _db.EmployeProfiles.Add(new LocalEmployeProfile
-                    {
-                        Id = profile.Id,
-                        Username = profile.Username,
-                        Prenom = profile.Prenom,
-                        Nom = profile.Nom,
-                        Icone = profile.Icone,
-                        HammamId = profile.HammamId,
-                        HammamNom = profile.HammamNom,
-                        CachedAt = DateTime.UtcNow
-                    });
-                }
-            }
-
-            await _db.SaveChangesAsync();
-            Serilog.Log.Information("Profils mis en cache: {Count} profils", profiles.Count);
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "Impossible de mettre en cache les profils");
+            await LoadCachedProfilesAsync();
         }
     }
 
@@ -174,48 +132,56 @@ public partial class LoginWindow : Window
     {
         try
         {
-            var cachedProfiles = await _db.EmployeProfiles.ToListAsync();
+            ProfilesGrid.Children.Clear();
 
-            if (!cachedProfiles.Any())
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var cachedProfiles = await db.EmployeProfiles.AsNoTracking().ToListAsync();
+
+            // Un même username peut exister dans plusieurs hammams : une seule carte par username,
+            // le mot de passe saisi désignera le bon employé.
+            var byUsername = cachedProfiles
+                .GroupBy(p => p.Username.Trim().ToLower())
+                .OrderBy(g => g.First().Username)
+                .ToList();
+
+            if (byUsername.Count == 0)
             {
+                LoadingProfilesText.Visibility = Visibility.Visible;
                 LoadingProfilesText.Text = "Impossible de joindre le serveur";
                 return;
             }
-
-            // Convertir les profils en cache vers le format attendu
-            _profiles = cachedProfiles.Select(p => new EmployeProfile
-            {
-                Id = p.Id,
-                Username = p.Username,
-                Prenom = p.Prenom,
-                Nom = p.Nom,
-                Icone = p.Icone,
-                HammamId = p.HammamId,
-                HammamNom = p.HammamNom
-            }).ToList();
 
             _isOfflineMode = true;
             LoadingProfilesText.Visibility = Visibility.Collapsed;
             HammamNameText.Text = "Mode hors ligne";
             HammamNameText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")!);
 
-            // Identifier les profils qui ont un mot de passe en cache
-            var profilesWithHash = cachedProfiles
-                .Where(p => !string.IsNullOrEmpty(p.PasswordHash))
-                .Select(p => p.Id)
-                .ToHashSet();
-
-            foreach (var profile in _profiles)
+            _profiles = new List<EmployeProfile>();
+            foreach (var group in byUsername)
             {
-                bool hasOfflineAccess = profilesWithHash.Contains(profile.Id);
-                var card = CreateProfileCard(profile, hasOfflineAccess);
-                ProfilesGrid.Children.Add(card);
+                var first = group.First();
+                var profile = new EmployeProfile
+                {
+                    Id = first.Id,
+                    Username = first.Username,
+                    Prenom = first.Prenom,
+                    Nom = first.Nom,
+                    Icone = first.Icone,
+                    HammamId = first.HammamId,
+                    HammamNom = first.HammamNom
+                };
+                _profiles.Add(profile);
+
+                var hasOfflineAccess = group.Any(p =>
+                    !string.IsNullOrEmpty(p.PasswordHash) || !string.IsNullOrEmpty(p.ServerPasswordHash));
+                ProfilesGrid.Children.Add(CreateProfileCard(profile, hasOfflineAccess));
             }
 
             Serilog.Log.Information("Profils chargés depuis le cache: {Count} profils", _profiles.Count);
         }
         catch (Exception ex)
         {
+            LoadingProfilesText.Visibility = Visibility.Visible;
             LoadingProfilesText.Text = "Impossible de joindre le serveur";
             Serilog.Log.Error(ex, "Erreur lors du chargement des profils en cache");
         }

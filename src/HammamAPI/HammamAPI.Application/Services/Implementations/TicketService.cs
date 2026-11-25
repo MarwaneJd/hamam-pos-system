@@ -126,6 +126,7 @@ public class TicketService : ITicketService
         var employeIdCache = new Dictionary<Guid, Guid>();
         var hammamIdCache = new Dictionary<Guid, Guid>();
         var typeTicketIdCache = new Dictionary<Guid, Guid>();
+        var employeHammamCache = new Dictionary<Guid, Guid?>();
 
         // Pré-charger tous les types de tickets du serveur pour le matching par nom
         var allTypeTickets = (await _typeTicketRepository.GetAllActiveOrderedAsync()).ToList();
@@ -246,13 +247,18 @@ public class TicketService : ITicketService
                 }
 
                 // === Cross-validation : le HammamId de l'employé est la source de vérité ===
-                var resolvedEmploye = await _employeRepository.GetByIdAsync(resolvedEmployeId);
-                if (resolvedEmploye != null && resolvedEmploye.HammamId != resolvedHammamId)
+                if (!employeHammamCache.TryGetValue(resolvedEmployeId, out var employeHammamId))
+                {
+                    employeHammamId = (await _employeRepository.GetByIdAsync(resolvedEmployeId))?.HammamId;
+                    employeHammamCache[resolvedEmployeId] = employeHammamId;
+                }
+
+                if (employeHammamId.HasValue && employeHammamId.Value != resolvedHammamId)
                 {
                     _logger.LogWarning(
                         "[SYNC] Cross-validation: ticket HammamId={TicketHammam} mais employé {EmpId} appartient à HammamId={EmpHammam}. Utilisation du hammam de l'employé.",
-                        resolvedHammamId, resolvedEmployeId, resolvedEmploye.HammamId);
-                    resolvedHammamId = resolvedEmploye.HammamId;
+                        resolvedHammamId, resolvedEmployeId, employeHammamId.Value);
+                    resolvedHammamId = employeHammamId.Value;
                     hammamIdCache[ticketRequest.HammamId] = resolvedHammamId;
                 }
 

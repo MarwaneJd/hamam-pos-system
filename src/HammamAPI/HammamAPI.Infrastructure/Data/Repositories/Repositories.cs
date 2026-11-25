@@ -31,14 +31,33 @@ public class Repository<T> : IRepository<T> where T : class
     public virtual async Task<T> AddAsync(T entity)
     {
         await _dbSet.AddAsync(entity);
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch
+        {
+            // Sans ce détachement, l'entité en échec reste "Added" dans le DbContext
+            // (partagé pendant toute la requête) et fait échouer TOUS les SaveChanges suivants :
+            // une synchro de 100 tickets s'arrêtait au premier ticket refusé.
+            _context.Entry(entity).State = EntityState.Detached;
+            throw;
+        }
         return entity;
     }
 
     public virtual async Task<T> UpdateAsync(T entity)
     {
         _dbSet.Update(entity);
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch
+        {
+            _context.Entry(entity).State = EntityState.Detached;
+            throw;
+        }
         return entity;
     }
 

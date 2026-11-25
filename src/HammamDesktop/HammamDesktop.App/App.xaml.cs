@@ -28,7 +28,7 @@ public partial class App : Application
         // Configuration Serilog
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
-            .WriteTo.File("logs/hammam-.log", rollingInterval: RollingInterval.Day)
+            .WriteTo.File("logs/hammam-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 60)
             .WriteTo.Console()
             .CreateLogger();
 
@@ -59,21 +59,24 @@ public partial class App : Application
             "HammamPOS",
             "hammam_local.db"
         );
-        
+
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        
-        services.AddDbContext<LocalDbContext>(options =>
+
+        // Factory de DbContext : chaque opération crée son propre contexte.
+        // Indispensable car la synchro en arrière-plan et l'UI accèdent à la base
+        // en parallèle (DbContext n'est PAS thread-safe).
+        services.AddDbContextFactory<LocalDbContext>(options =>
             options.UseSqlite($"Data Source={dbPath}"));
 
         // Services
+        services.AddSingleton<IConnectivityService, ConnectivityService>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ITicketService, TicketService>();
         services.AddSingleton<ISyncService, SyncService>();
         services.AddSingleton<IAudioService, AudioService>();
-        services.AddSingleton<IConnectivityService, ConnectivityService>();
         services.AddSingleton<IPrintService, PrintService>();
 
-        // HTTP Client avec Polly
+        // HTTP Client principal avec Polly (retries courts : 5xx, 408, erreurs réseau)
         services.AddHttpClient("HammamApi", client =>
         {
             client.BaseAddress = new Uri(configuration["ApiSettings:BaseUrl"]!);
@@ -82,10 +85,17 @@ public partial class App : Application
             );
         })
         .AddTransientHttpErrorPolicy(policy =>
-            policy.WaitAndRetryAsync(3, retryAttempt =>
-                TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))
+            policy.WaitAndRetryAsync(2, retryAttempt =>
+                TimeSpan.FromMilliseconds(400 * retryAttempt)
             )
         );
+
+        // HTTP Client rapide sans retry (détection offline immédiate)
+        services.AddHttpClient("HammamApiFast", client =>
+        {
+            client.BaseAddress = new Uri(configuration["ApiSettings:BaseUrl"]!);
+            client.Timeout = TimeSpan.FromSeconds(2);
+        });
 
         // ViewModels
         services.AddTransient<LoginViewModel>();
@@ -117,35 +127,10 @@ public partial class App : Application
         try
         {
             Log.Information("=== Démarrage de l'application Hammam POS ===");
-            
+
             await _host.StartAsync();
 
-            // Initialiser la base de données
-            using (var scope = _host.Services.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<LocalDbContext>();
-                
-                Log.Information("Initialisation de la base de données SQLite...");
-                await dbContext.Database.EnsureCreatedAsync();
-
-                // Créer la table employe_profiles si elle n'existe pas (pour les bases existantes)
-                await dbContext.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE IF NOT EXISTS employe_profiles (
-                        Id TEXT NOT NULL PRIMARY KEY,
-                        Username TEXT NOT NULL,
-                        Prenom TEXT,
-                        Nom TEXT,
-                        Icone TEXT,
-                        HammamId TEXT NOT NULL,
-                        HammamNom TEXT,
-                        HammamNomArabe TEXT,
-                        HammamPrefixeTicket INTEGER NOT NULL DEFAULT 100000,
-                        PasswordHash TEXT,
-                        CachedAt TEXT NOT NULL
-                    )");
-
-                Log.Information("Base de données initialisée avec succès");
-            }
+            await InitializeDatabaseAsync();
 
             // Démarrer le service de synchronisation
             var syncService = _host.Services.GetRequiredService<ISyncService>();
@@ -171,10 +156,83 @@ public partial class App : Application
         }
     }
 
+    private async Task InitializeDatabaseAsync()
+    {
+        var dbFactory = _host.Services.GetRequiredService<IDbContextFactory<LocalDbContext>>();
+        await using var dbContext = await dbFactory.CreateDbContextAsync();
+
+        Log.Information("Initialisation de la base de données SQLite...");
+        await dbContext.Database.EnsureCreatedAsync();
+
+        // Créer la table employe_profiles si elle n'existe pas (pour les bases existantes)
+        await dbContext.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS employe_profiles (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Username TEXT NOT NULL,
+                Prenom TEXT,
+                Nom TEXT,
+                Icone TEXT,
+                HammamId TEXT NOT NULL,
+                HammamNom TEXT,
+                HammamNomArabe TEXT,
+                HammamPrefixeTicket INTEGER NOT NULL DEFAULT 100000,
+                PasswordHash TEXT,
+                EncryptedPassword TEXT NULL,
+                ServerPasswordHash TEXT NULL,
+                CachedAt TEXT NOT NULL
+            )");
+
+        // Colonnes ajoutées au fil des versions (bases existantes chez le client)
+        await AddColumnIfMissingAsync(dbContext, "employe_profiles", "EncryptedPassword", "TEXT NULL");
+        await AddColumnIfMissingAsync(dbContext, "employe_profiles", "ServerPasswordHash", "TEXT NULL");
+        await AddColumnIfMissingAsync(dbContext, "tickets", "TicketNumber", "TEXT NULL");
+        await AddColumnIfMissingAsync(dbContext, "tickets", "SyncAttempts", "INTEGER NOT NULL DEFAULT 0");
+        await AddColumnIfMissingAsync(dbContext, "tickets", "LastSyncError", "TEXT NULL");
+
+        // Initialiser les anciens tickets sans numéro
+        await dbContext.Database.ExecuteSqlRawAsync(@"
+            UPDATE tickets
+            SET TicketNumber = 'LEGACY-' || substr(hex(id), 1, 8)
+            WHERE TicketNumber IS NULL OR TicketNumber = ''
+        ");
+
+        // Unicité du numéro par hammam
+        try
+        {
+            await dbContext.Database.ExecuteSqlRawAsync(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_tickets_hammam_ticket_number
+                ON tickets(HammamId, TicketNumber)
+                WHERE TicketNumber IS NOT NULL
+            ");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Index d'unicité des numéros de ticket non créé (données legacy en conflit)");
+        }
+
+        Log.Information("Base de données initialisée avec succès");
+    }
+
+    private static async Task AddColumnIfMissingAsync(LocalDbContext db, string table, string column, string definition)
+    {
+        var exists = await db.Database
+            .SqlQuery<int>($"SELECT COUNT(*) AS Value FROM pragma_table_info({table}) WHERE name = {column}")
+            .SingleAsync();
+
+        if (exists == 0)
+        {
+            // ALTER TABLE n'accepte pas de paramètres SQL : noms internes constants uniquement
+#pragma warning disable EF1002
+            await db.Database.ExecuteSqlRawAsync($"ALTER TABLE {table} ADD COLUMN {column} {definition}");
+#pragma warning restore EF1002
+            Log.Information("Migration SQLite : colonne {Table}.{Column} ajoutée", table, column);
+        }
+    }
+
     protected override async void OnExit(ExitEventArgs e)
     {
         Log.Information("=== Arrêt de l'application ===");
-        
+
         using (_host)
         {
             await _host.StopAsync(TimeSpan.FromSeconds(5));
@@ -200,8 +258,8 @@ public class ApiSettings
 
 public class SyncSettings
 {
-    public int IntervalMinutes { get; set; } = 5;
-    public int BatchSize { get; set; } = 100;
+    public int IntervalMinutes { get; set; } = 1;
+    public int BatchSize { get; set; } = 50;
     public int RetryCount { get; set; } = 3;
 }
 

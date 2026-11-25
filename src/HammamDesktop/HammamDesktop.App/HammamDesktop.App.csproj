@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>HammamPOS</AssemblyName>
     <RootNamespace>HammamDesktop</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Company>Hammam System</Company>
     <Product>Hammam Point de Vente</Product>
     <Description>Application de point de vente pour les Hammams</Description>
@@ -45,6 +45,12 @@
     
     <!-- Audio -->
     <PackageReference Include="NAudio" Version="2.2.1" />
+
+    <!-- Chiffrement local du mot de passe (DPAPI) pour re-auth silencieuse -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+
+    <!-- Vérification hors ligne des hash BCrypt fournis par le serveur (même version que l'API) -->
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
   </ItemGroup>
 
   <ItemGroup>

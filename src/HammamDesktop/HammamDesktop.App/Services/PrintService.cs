@@ -40,7 +40,7 @@ public class TicketPrintData
 {
     public string HammamNom { get; set; } = "";
     public string HammamNomArabe { get; set; } = "";
-    public int TicketNumber { get; set; }
+    public string TicketNumber { get; set; } = "";
     public string TypeTicket { get; set; } = "";
     public decimal Prix { get; set; }
     public DateTime DateHeure { get; set; }
