@@ -189,12 +189,20 @@ public partial class App : Application
         await AddColumnIfMissingAsync(dbContext, "tickets", "SyncAttempts", "INTEGER NOT NULL DEFAULT 0");
         await AddColumnIfMissingAsync(dbContext, "tickets", "LastSyncError", "TEXT NULL");
 
-        // Initialiser les anciens tickets sans numéro
+        // Anciens tickets sans numéro : numéro dérivé de l'Id COMPLET (unique).
+        // Les versions précédentes n'utilisaient que 4 caractères de l'Id (65 536 valeurs) : deux tickets
+        // pouvaient recevoir le même numéro et le serveur prenait le second pour un doublon (ticket perdu).
+        // On renumérote donc aussi les tickets legacy pas encore synchronisés.
         await dbContext.Database.ExecuteSqlRawAsync(@"
             UPDATE tickets
-            SET TicketNumber = 'LEGACY-' || substr(hex(id), 1, 8)
+            SET TicketNumber = 'LEGACY-' || upper(replace(Id, '-', ''))
             WHERE TicketNumber IS NULL OR TicketNumber = ''
+               OR (SyncStatus = 'Pending' AND TicketNumber LIKE 'LEGACY-%' AND length(TicketNumber) < 39)
         ");
+
+        // Profils invalides laissés par d'anciennes versions (cache de api/auth/profiles, Id vide)
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "DELETE FROM employe_profiles WHERE Id = '00000000-0000-0000-0000-000000000000'");
 
         // Unicité du numéro par hammam
         try

@@ -167,6 +167,7 @@ public class AuthService : IAuthService
     private readonly SessionSettings _sessionSettings;
     private readonly IConnectivityService _connectivityService;
     private readonly SemaphoreSlim _reauthLock = new(1, 1);
+    private readonly SemaphoreSlim _credentialsLock = new(1, 1);
     private DateTime _lastCredentialsRefreshUtc = DateTime.MinValue;
     private string? _backgroundToken;
     private DateTime _backgroundTokenExpiresUtc = DateTime.MinValue;
@@ -321,14 +322,14 @@ public class AuthService : IAuthService
             }
 
             var localHash = ComputePasswordHash(password);
-            var match = candidates.FirstOrDefault(p => !string.IsNullOrEmpty(p.PasswordHash) && p.PasswordHash == localHash);
 
-            // Sinon : vérifier contre le hash serveur (BCrypt) reçu lors de la dernière synchro.
-            // Permet à un employé de se connecter hors ligne sur un poste où il ne s'est jamais connecté.
-            if (match == null)
-            {
-                match = await Task.Run(() => candidates.FirstOrDefault(p => VerifyServerHash(password, CryptoHelper.Unprotect(p.ServerPasswordHash))));
-            }
+            // Le hash serveur (BCrypt) fait foi quand il est connu : c'est le mot de passe actuel de CET employé.
+            // Le hash local (SHA) ne sert que pour les profils jamais rafraîchis depuis le serveur
+            // (d'anciennes versions pouvaient y mélanger deux employés de même username).
+            var match = await Task.Run(() => candidates.FirstOrDefault(p =>
+                !string.IsNullOrEmpty(p.ServerPasswordHash)
+                    ? VerifyServerHash(password, CryptoHelper.Unprotect(p.ServerPasswordHash))
+                    : !string.IsNullOrEmpty(p.PasswordHash) && p.PasswordHash == localHash));
 
             if (match == null)
             {
@@ -454,7 +455,13 @@ public class AuthService : IAuthService
     public async Task<string?> GetSyncTokenAsync(bool forceRefresh = false)
     {
         if (await ReadSessionAsync() != null)
-            return await EnsureValidTokenAsync(forceRefresh);
+        {
+            var sessionToken = await EnsureValidTokenAsync(forceRefresh);
+            if (sessionToken != null)
+                return sessionToken;
+            // Session ouverte mais non ré-authentifiable (ex. connexion hors ligne avec un mot de passe
+            // changé depuis) : on synchronise quand même avec les accès d'un autre employé du poste.
+        }
 
         if (!forceRefresh && _backgroundToken != null && _backgroundTokenExpiresUtc > DateTime.UtcNow + TokenSafetyMargin)
             return _backgroundToken;
@@ -507,8 +514,13 @@ public class AuthService : IAuthService
         if (!force && DateTime.UtcNow - _lastCredentialsRefreshUtc < CredentialsRefreshInterval)
             return;
 
+        // Une seule mise à jour à la fois (login + synchro peuvent la déclencher en même temps)
+        await _credentialsLock.WaitAsync();
         try
         {
+            if (!force && DateTime.UtcNow - _lastCredentialsRefreshUtc < CredentialsRefreshInterval)
+                return;
+
             var token = await EnsureValidTokenAsync();
             if (token == null)
                 return;
@@ -547,12 +559,20 @@ public class AuthService : IAuthService
                     profile = new LocalEmployeProfile { Id = cred.Id };
                     db.EmployeProfiles.Add(profile);
                 }
-                else if (!string.IsNullOrEmpty(profile.ServerPasswordHash)
-                         && CryptoHelper.Unprotect(profile.ServerPasswordHash) != cred.PasswordHash)
+                else if (CryptoHelper.Unprotect(profile.ServerPasswordHash) != cred.PasswordHash)
                 {
-                    // Mot de passe changé sur le serveur : l'ancien ne doit plus ouvrir de session hors ligne
-                    profile.PasswordHash = "";
-                    profile.EncryptedPassword = null;
+                    // Hash serveur nouveau ou changé : on ne garde les secrets locaux que s'ils correspondent
+                    // au mot de passe ACTUEL de cet employé. Couvre le changement de mot de passe (sans casser
+                    // la ré-auth de l'employé qui vient de se connecter avec le nouveau) et les anciennes
+                    // lignes où un autre employé de même username avait laissé son mot de passe.
+                    var localPassword = CryptoHelper.Unprotect(profile.EncryptedPassword);
+                    var stillValid = localPassword != null
+                        && await Task.Run(() => VerifyServerHash(localPassword, cred.PasswordHash));
+                    if (!stillValid)
+                    {
+                        profile.PasswordHash = "";
+                        profile.EncryptedPassword = null;
+                    }
                 }
 
                 profile.Username = cred.Username;
@@ -569,8 +589,10 @@ public class AuthService : IAuthService
             }
 
             // Employés désactivés/supprimés de CE hammam : retirer l'accès hors ligne
+            // (+ lignes invalides laissées par d'anciennes versions : Id vide)
             var revoked = existing
-                .Where(p => p.HammamId == session.HammamId && !receivedIds.Contains(p.Id) && p.Id != session.EmployeId)
+                .Where(p => p.Id == Guid.Empty
+                    || (p.HammamId == session.HammamId && !receivedIds.Contains(p.Id) && p.Id != session.EmployeId))
                 .ToList();
             db.EmployeProfiles.RemoveRange(revoked);
 
@@ -584,6 +606,10 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "Impossible de mettre à jour les accès hors ligne");
+        }
+        finally
+        {
+            _credentialsLock.Release();
         }
     }
 
@@ -816,6 +842,10 @@ public class TicketService : ITicketService
 
         try
         {
+            // Appel réseau éventuel (calage sur le compteur serveur) AVANT la transaction :
+            // une transaction SQLite verrouille la base en écriture, la synchro ne doit pas attendre le réseau.
+            await SeedTicketCounterAsync(ticket.HammamId, hammamPrefixeTicket);
+
             const int maxAttempts = 5;
 
             for (var attempt = 1; ; attempt++)
@@ -846,6 +876,18 @@ public class TicketService : ITicketService
         {
             hammamLock.Release();
         }
+    }
+
+    private async Task SeedTicketCounterAsync(Guid hammamId, int hammamPrefixeTicket)
+    {
+        var configKey = $"{LastTicketConfigPrefix}{hammamId}";
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        if (await db.Configs.AnyAsync(c => c.Key == configKey))
+            return;
+
+        var snapshot = await GetLastTicketNumberSnapshotAsync(db, hammamId, hammamPrefixeTicket);
+        db.Configs.Add(new LocalConfig { Key = configKey, Value = snapshot.ToString(), UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
     }
 
     public async Task<string> GetNextTicketNumberAsync(Guid hammamId, int hammamPrefixeTicket)
@@ -1130,7 +1172,7 @@ public class SyncService : ISyncService, IDisposable
                 return;
             }
 
-            await SyncNowAsync();
+            await RunSyncAsync(waitIfRunning: false);
         }
         catch (Exception ex)
         {
@@ -1138,9 +1180,12 @@ public class SyncService : ISyncService, IDisposable
         }
     }
 
-    public async Task SyncNowAsync()
+    /// <summary>Bouton "Synchroniser" : si une synchro tourne déjà, on l'attend puis on relance.</summary>
+    public Task SyncNowAsync() => RunSyncAsync(waitIfRunning: true);
+
+    private async Task RunSyncAsync(bool waitIfRunning)
     {
-        if (!await _syncLock.WaitAsync(0))
+        if (!await _syncLock.WaitAsync(waitIfRunning ? TimeSpan.FromMinutes(3) : TimeSpan.Zero))
         {
             Serilog.Log.Debug("Synchronisation déjà en cours, ignorée");
             return;
@@ -1244,7 +1289,8 @@ public class SyncService : ISyncService, IDisposable
                     return null;
                 }
 
-                response = await PostAsync(refreshed, tickets);
+                token = refreshed;
+                response = await PostAsync(token, tickets);
             }
 
             // Un ticket malformé fait rejeter tout le lot (400) : on isole le coupable ticket par ticket
@@ -1306,7 +1352,7 @@ public class SyncService : ISyncService, IDisposable
             {
                 t.Id,
                 TicketNumber = string.IsNullOrWhiteSpace(t.TicketNumber)
-                    ? $"LEGACY-{t.Id.ToString("N")[..8]}"
+                    ? $"LEGACY-{t.Id:N}"
                     : t.TicketNumber,
                 t.TypeTicketId,
                 t.EmployeId,
